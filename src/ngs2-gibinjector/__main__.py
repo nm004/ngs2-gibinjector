@@ -17,7 +17,6 @@ from tmc import TMC, LHeader, TTDH, MtrCol, HieLay, MdlGeo
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--output-dir', dest='outdir', default='.')
-    parser.add_argument('-b', '--bigger-gibs', action='store_true')
     parser.add_argument('databin')
     args = parser.parse_args()
     outdir = args.outdir
@@ -27,9 +26,9 @@ def main():
 
     with (open(args.databin, 'rb') as db_f,
           mmap.mmap(db_f.fileno(), 0, access=mmap.ACCESS_READ) as db_m):
-        inject_optscat(Databin(db_m), outdir, bigger_gibs = args.bigger_gibs)
+        inject_optscat(Databin(db_m), outdir)
 
-def inject_optscat(databin, outdir, bigger_gibs = False):
+def inject_optscat(databin, outdir):
     # e_okm_* has a redder gib texture and small OPTscat objects.
     e_okm_a = extract_tmc(databin, 1098, mutable=False)
     # e_gja_* has a bit higher res gib normal, so we are gonna use it too.
@@ -38,130 +37,122 @@ def inject_optscat(databin, outdir, bigger_gibs = False):
     e_chg_a = extract_tmc(databin, 1116, mutable=False)
     # e_tky_* has scrap OPTscat objects.
     e_tky_b = extract_tmc(databin, 1296, mutable=False)
-    # e_dgr_a and e_wlf_* has bigger OPTscat objects.
+    # e_dgr_a and e_wlf_* has large OPTscat objects.
     e_dgr_a = extract_tmc(databin, 1119, mutable=False)
 
     # e_nin_a
     tmc_id = 1094
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 16, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_nin_c
-    # This misses a redder gib texture only
     tmc_id = 1262
     tmc = extract_tmc(databin, tmc_id)
-    if bigger_gibs:
-        remove_optscats(tmc)
-        copy_optscats(e_dgr_a, tmc)
-        sort_objects_by_nodename(tmc)
+    remove_optscats(tmc)
+    copy_optscats(e_dgr_a, tmc)
+    sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     # e_nin_c and e_jgm_c have a different cut surface texture, but it seems that
     # there is no redder one of it. So, let's copy the redder gib texture instead
     # (other models use a gib texture as a cut surface).
     copy_texture_buffer(e_okm_a, 5, tmc, 7)
-    copy_texture_buffer(e_gja_a, 4, tmc, 6)
+    copy_texture_buffer(e_gja_a, 5, tmc, 6)
     set_optscat_texture_buffer(tmc, (5, 17, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_nin_d
     tmc_id = 1383
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 15, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_jgm_a
     tmc_id = 1090
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 13, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_jgm_c
     tmc_id = 1333
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
-    copy_texture_buffer(e_gja_a, 4, tmc, 6)
+    copy_texture_buffer(e_gja_a, 5, tmc, 6)
     set_optscat_texture_buffer(tmc, (5, 14, 6))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_jgm_d
     tmc_id = 1817
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 14, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_bni_a
-    # This misses a redder gib texture only
     tmc_id = 1311
     tmc = extract_tmc(databin, tmc_id)
-    if bigger_gibs:
-        remove_optscats(tmc)
-        copy_optscats(e_dgr_a, tmc)
-        sort_objects_by_nodename(tmc)
+    remove_optscats(tmc)
+    copy_optscats(e_dgr_a, tmc)
+    sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 37)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (37, 38, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_you_a
-    # This misses a redder gib texture only
     tmc_id = 1235
     tmc = extract_tmc(databin, tmc_id)
-    if bigger_gibs:
-        remove_optscats(tmc)
-        copy_optscats(e_dgr_a, tmc)
-        sort_objects_by_nodename(tmc)
+    remove_optscats(tmc)
+    copy_optscats(e_dgr_a, tmc)
+    sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 12)
+    copy_texture_buffer(e_gja_a, 5, tmc, 4)
     set_optscat_texture_buffer(tmc, (12, 21, 4))
     save_tmc(outdir, tmc, tmc_id)
 
-    # e_you_c has OPTscat objects and a redder gib texture already.
-    # This misses a redder gib texture only
+    # e_you_c
     tmc_id = 1359
     tmc = extract_tmc(databin, tmc_id)
-    if bigger_gibs:
-        remove_optscats(tmc)
-        copy_optscats(e_dgr_a, tmc)
-        sort_objects_by_nodename(tmc)
+    remove_optscats(tmc)
+    copy_optscats(e_dgr_a, tmc)
+    sort_objects_by_nodename(tmc)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (1, 2, 0))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_you_d
-    # This misses a redder gib texture only
     tmc_id = 1366
     tmc = extract_tmc(databin, tmc_id)
-    if bigger_gibs:
-        remove_optscats(tmc)
-        copy_optscats(e_dgr_a, tmc)
-        sort_objects_by_nodename(tmc)
+    remove_optscats(tmc)
+    copy_optscats(e_dgr_a, tmc)
+    sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 12)
+    copy_texture_buffer(e_gja_a, 5, tmc, 4)
     set_optscat_texture_buffer(tmc, (12, 21, 4))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_gja_b
     tmc_id = 1167
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
-    copy_texture_buffer(e_okm_a, 5, tmc, 4)
+    copy_optscats(e_dgr_a, tmc)
     set_optscat_texture_buffer(tmc, (4, 13, 5))
     sort_objects_by_nodename(tmc)
     save_tmc(outdir, tmc, tmc_id)
@@ -169,44 +160,50 @@ def inject_optscat(databin, outdir, bigger_gibs = False):
     # e_gja_c
     tmc_id = 1376
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
-    copy_texture_buffer(e_okm_a, 5, tmc, 4)
+    copy_optscats(e_dgr_a, tmc)
     set_optscat_texture_buffer(tmc, (4, 13, 5))
     sort_objects_by_nodename(tmc)
     save_tmc(outdir, tmc, tmc_id)
 
     # e_wlf_a
-    # This misses a redder gib texture only
     tmc_id = 1112
     tmc = extract_tmc(databin, tmc_id)
     copy_texture_buffer(e_okm_a, 5, tmc, 11)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
     save_tmc(outdir, tmc, tmc_id)
 
     # e_wlf_b
-    # This misses a redder gib texture only
     tmc_id = 1364
     tmc = extract_tmc(databin, tmc_id)
     copy_texture_buffer(e_okm_a, 5, tmc, 11)
-    copy_texture_buffer(e_gja_a, 4, tmc, 0)
+    copy_texture_buffer(e_gja_a, 5, tmc, 0)
+    save_tmc(outdir, tmc, tmc_id)
+
+    # e_chg_a
+    tmc_id = 1116
+    tmc = extract_tmc(databin, tmc_id)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
+    set_optscat_texture_buffer(tmc, (13, 21, 23))
     save_tmc(outdir, tmc, tmc_id)
 
     # kage
     tmc_id = 1138
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
-    copy_texture_buffer(e_chg_a, 13, tmc, None)
-    set_optscat_texture_buffer(tmc, (17, 16, 0))
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
+    copy_texture_buffer(e_chg_a, 13, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
+    set_optscat_texture_buffer(tmc, (17, 16, 18))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_kag_b
     tmc_id = 1148
     tmc = extract_tmc(databin, tmc_id)
-    copy_optscats(e_dgr_a if bigger_gibs else e_okm_a, tmc)
-    copy_texture_buffer(e_chg_a, 13, tmc, None)
-    set_optscat_texture_buffer(tmc, (8, 7, 0))
+    copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
+    copy_texture_buffer(e_chg_a, 13, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
+    set_optscat_texture_buffer(tmc, (8, 7, 9))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_van_* need their nodes to be sorted with the following
@@ -228,27 +225,30 @@ def inject_optscat(databin, outdir, bigger_gibs = False):
     tmc_id = 1107
     tmc = extract_tmc(databin, tmc_id)
     copy_optscats(e_dgr_a, tmc)
-    copy_texture_buffer(e_chg_a, 13, tmc, None)
-    set_optscat_texture_buffer(tmc, (12, 11, 2))
     sort_objects_by_nodename(tmc, key=key)
+    copy_texture_buffer(e_chg_a, 13, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
+    set_optscat_texture_buffer(tmc, (12, 11, 13))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_van_b
     tmc_id = 1342
     tmc = extract_tmc(databin, tmc_id)
     copy_optscats(e_dgr_a, tmc)
-    copy_texture_buffer(e_chg_a, 13, tmc, None)
-    set_optscat_texture_buffer(tmc, (12, 11, 2))
     sort_objects_by_nodename(tmc, key=key)
+    copy_texture_buffer(e_chg_a, 13, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
+    set_optscat_texture_buffer(tmc, (12, 11, 13))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_van_c
     tmc_id = 1361
     tmc = extract_tmc(databin, tmc_id)
     copy_optscats(e_dgr_a, tmc)
-    copy_texture_buffer(e_chg_a, 13, tmc, None)
-    set_optscat_texture_buffer(tmc, (12, 11, 2))
     sort_objects_by_nodename(tmc, key=key)
+    copy_texture_buffer(e_chg_a, 13, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
+    set_optscat_texture_buffer(tmc, (12, 11, 13))
     save_tmc(outdir, tmc, tmc_id)
 
     # e_mac_a
@@ -262,14 +262,12 @@ def inject_optscat(databin, outdir, bigger_gibs = False):
     save_tmc(outdir, tmc, tmc_id)
 
     # e_ciw_a
-    # This has a lower scrap texture
     tmc_id = 1280
     tmc = extract_tmc(databin, tmc_id)
     copy_texture_buffer(e_tky_b, 9, tmc, 8)
     save_tmc(outdir, tmc, tmc_id)
 
     # e_ciw_b
-    # This has a lower scrap texture
     tmc_id = 1284
     tmc = extract_tmc(databin, tmc_id)
     copy_texture_buffer(e_tky_b, 9, tmc, 16)
@@ -280,7 +278,7 @@ def inject_optscat(databin, outdir, bigger_gibs = False):
     tmc = extract_tmc(databin, tmc_id)
     copy_optscats(e_okm_a, tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, None)
-    copy_texture_buffer(e_gja_a, 4, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (3, 2, 4))
     sort_objects_by_nodename(tmc, key=key)
     save_tmc(outdir, tmc, tmc_id)
@@ -290,7 +288,7 @@ def inject_optscat(databin, outdir, bigger_gibs = False):
     tmc = extract_tmc(databin, tmc_id)
     copy_optscats(e_okm_a, tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, None)
-    copy_texture_buffer(e_gja_a, 4, tmc, None)
+    copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (5, 4, 6))
     sort_objects_by_nodename(tmc, key=key)
     save_tmc(outdir, tmc, tmc_id)
