@@ -35,11 +35,7 @@ class Block(AbstractBlock):
         return self._data
 
 class Section(Block, MutableSequence):
-    @staticmethod
-    @abstractmethod
-    def Block(self, data): pass
-
-    def __init__(self, data, ldata = b''):
+    def __init__(self, data, ldata = b'', Block = Block):
         super().__init__(data)
         data = self.data
         self._ldata = ldata = memoryview(ldata)
@@ -62,7 +58,12 @@ class Section(Block, MutableSequence):
         self._info0 = self._get_info(data)
         self._meta_info0 = self._get_meta_info(data)
         self._optional_data0 = self._get_optional_data(data)
-        self._blocks0 = list(self._generate_blocks())
+
+        boT = self._get_block_ofs_table(data)
+        data_or_ldata = ldata if self.L_is_enabled else data
+        bsT = ( self._get_block_size_table(data)
+                or tuple(self._generate_block_size_table(boT, data, data_or_ldata)) )
+        self._blocks0 = [ Block(data_or_ldata[o:o+s]) for o, s in zip(boT, bsT) ]
 
         self._info = memoryview(self._info0)
         self._meta_info = memoryview(self._meta_info0)
@@ -131,24 +132,6 @@ class Section(Block, MutableSequence):
 
     def __imul__(self, other):
         self._blocks *= other
-
-    @property
-    def ldata(self):
-        return self._ldata
-
-    def enableL(self):
-        pass
-
-    def disableL(self):
-        pass
-
-    @property
-    def L_is_enabled(self):
-        return self._L_is_enabled
-
-    @L_is_enabled.setter
-    def L_is_enabled(self, val):
-        self._L_is_enabled = val
 
     def commit(self):
         for blk in self._blocks:
@@ -223,28 +206,29 @@ class Section(Block, MutableSequence):
         # Reinit self
         self.__init__(new_data, new_ldata)
 
-    def _generate_blocks(self):
-        boT = self._get_block_ofs_table(self.data)
-        bsT = self._get_block_size_table(self.data)
-        I = range(self._get_block_count(self.data))
-        x = self.ldata if self.L_is_enabled else self.data
-        for i in I:
-            if not (o := boT[i]):
-                yield self.Block(x[0:0])
-                continue
-            if bsT:
-                yield self.Block(x[o:o+bsT[i]])
-                continue
-            for p in boT[i+1:]:
-                if p:
-                    yield self.Block(x[o:p])
-                    break
-            else:
-                yield self.Block(x[o:])
+    @property
+    def ldata(self):
+        return self._ldata
+
+    @property
+    def L_is_enabled(self):
+        return self._L_is_enabled
+
+    @L_is_enabled.setter
+    def L_is_enabled(self, val):
+        self._L_is_enabled = val
 
     @staticmethod
-    def _get_magic(data):
-        return Section._get_rawmagic(data).tobytes().partition(b'\x00')[0]
+    def _generate_block_size_table(block_ofs_table, data, data_or_ldata):
+        for i, o in enumerate(block_ofs_table):
+            if not o:
+                yield 0
+                continue
+            for p in block_ofs_table[i+1:]:
+                if p:
+                    yield p - o
+            else:
+                yield len(data_or_ldata) - o
 
     @classmethod
     def _has_magic(cls, data):
@@ -276,200 +260,78 @@ class Section(Block, MutableSequence):
             warnings.warn(f'{name} check digits read from data differs from check digits read from ldata'
                           f'({digits:08X} != {digits1:08X})')
 
-    @staticmethod
-    def _get_info(data):
-        n = Section._get_info_size(data)
-        return data[0:n]
+    def read_magic(data):
+        return read_rawmagic(data).tobytes().partition(b'\x00')[0]
 
-    @staticmethod
-    def _get_meta_info(data):
-        n = Section._get_info_size(data)
-        o = ( Section._get_block_ofs_table_ofs(data)
-              or Section._get_block_size_table_ofs(data)
-              or Section._get_optional_data_ofs(data)
-              or None )
-        return data[n:o]
-
-    @staticmethod
-    def _set_meta_info(data, val):
-        n = Section._get_info_size(data)
-        o = ( Section._get_block_ofs_table_ofs(data)
-              or Section._get_block_size_table_ofs(data)
-              or Section._get_optional_data_ofs(data)
-              or None)
-        data[n:o] = val
-
-    @staticmethod
-    def _get_block_ofs_table(data):
-        o = Section._get_block_ofs_table_ofs(data) or data.nbytes
-        n = Section._get_block_count(data)
-        return data[o:].cast('I')[:n]
-
-    @staticmethod
-    def _get_block_size_table(data):
-        o = Section._get_block_size_table_ofs(data) or data.nbytes
-        n = Section._get_block_count(data)
-        return data[o:].cast('I')[:n]
-
-    @staticmethod
-    def _get_optional_data(data):
-        o = Section._get_optional_data_ofs(data) or data.nbytes
-        t = Section._get_block_ofs_table(data)
-        p = t[0] if t else None
-        return data[o:p]
-
-    @staticmethod
-    def _set_optional_data(data, val):
-        o = Section._get_optional_data_ofs(data) or data.nbytes
-        t = Section._get_block_ofs_table(data)
-        p = t[0] if t else None
-        data[o:p] = val            
-
-    @staticmethod
-    def _get_rawmagic(data):
-        return data[0:8]
-
-    @staticmethod
-    def _set_rawmagic(data, val):
-        data[0:8] = val
-
-    @staticmethod
-    def _get_version(data):
-        return data[0x8:].cast('I')[0]
-
-    @staticmethod
-    def _set_version(data, val):
-        data[0x8:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_info_size(data):
-        return data[0xc:].cast('I')[0]
-
-    @staticmethod
-    def _set_info_size(data, val):
-        data[0xc:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_section_size(data):
-        return data[0x10:].cast('I')[0]
-
-    @staticmethod
-    def _set_section_size(data, val):
-        data[0x10:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_block_count(data):
-        return data[0x14:].cast('I')[0]
-
-    @staticmethod
-    def _set_block_count(data, val):
-        data[0x14:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_valid_block_count(data):
-        return data[0x18:].cast('I')[0]
-
-    @staticmethod
-    def _set_valid_block_count(data, val):
-        data[0x18:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_block_ofs_table_ofs(data):
-        return data[0x20:].cast('I')[0]
-
-    @staticmethod
-    def _set_block_ofs_table_ofs(data, val):
-        data[0x20:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_block_size_table_ofs(data):
-        return data[0x24:].cast('I')[0]
-
-    @staticmethod
-    def _set_block_size_table_ofs(data, val):
-        data[0x24:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_optional_data_ofs(data):
-        return data[0x28:].cast('I')[0]
-
-    @staticmethod
-    def _set_optional_data_ofs(data, val):
-        data[0x28:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_L_block_count(data):
-        return data[0x40:].cast('I')[0]
-
-    @staticmethod
-    def _get_L_block_count_L(ldata):
-        return ldata[0x0:].cast('I')[0]
-
-    @staticmethod
-    def _set_L_block_count(data, ldata, val):
-        data[0x40:].cast('I')[0] = ldata[0x0:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_L_size(data):
-        return data[0x44:].cast('I')[0]
-
-    @staticmethod
-    def _get_L_size_L(ldata):
-        return ldata[0x4:].cast('I')[0]
-
-    @staticmethod
-    def _set_L_size(data, ldata, val):
-        data[0x44:].cast('I')[0] = ldata[0x4:].cast('I')[0] = val
-
-    @staticmethod
-    def _get_L_check_digits(data):
-        return data[0x48:].cast('I')[0]
-
-    @staticmethod
-    def _get_L_check_digits_L(ldata):
-        return ldata[0x8:].cast('I')[0]
-
-    @staticmethod
-    def _set_L_check_digits(data, ldata, val):
-        data[0x48:].cast('I')[0] = ldata[0x8:].cast('I')[0] = val
 
 class TMC(Section):
-    Block = Block
-
     def __init__(self, data, ldata = b''):
         super().__init__(data)
-        tbl = tuple(self._get_block_typeid_table())
-        data = self[i := tbl.index(0x8000_0020)].data
-        ldata = self.lheader.ldata if self.lheader else ldata
 
-        self._lheader = self[i] = L = LHeader(data, ldata)
+        tbl = tuple(self._get_block_typeid_table())
+        if ldata:
+            try:
+                L = LHeader(self[tbl.index(0x8000_0020)].data, ldata)
+            except ValueError:
+                L = None
+        else:
+            try:
+                L = self.lheader
+            except AttributeError:
+                L = None
+
         for i, t in enumerate(tbl):
             m = self[i].data
             if not m:
                 continue
             match t:
                 case 0x8000_0001:
-                    self._mdlgeo = self[i] = MdlGeo(m, L.mdlgeo.data)
+                    try:
+                        ldata = L.mdlgeo.data
+                    except AttributeError:
+                        ldata = b''
+                    self._mdlgeo = self[i] = MdlGeo(m, ldata)
                     self._mdlgeo_section_index = i
                 case 0x8000_0002:
-                    self._ttdm = self[i] = TTDM(m, L.ttdl.data)
+                    try:
+                        ldata = L.ttdl.data
+                    except AttributeError:
+                        ldata = b''
+                    self._ttdm = self[i] = TTDM(m, ldata)
                     self._ttdm_section_index = i
                 case 0x8000_0003:
-                    self._vtxlay = self[i] = VtxLay(m, L.vtxlay.data)
+                    try:
+                        ldata = L.vtxlay.data
+                    except AttributeError:
+                        ldata = b''
+                    self._vtxlay = self[i] = VtxLay(m, ldata)
                     self._vtxlay_section_index = i
                 case 0x8000_0004:
-                    self._idxlay = self[i] = IdxLay(m, L.idxlay.data)
+                    try:
+                        ldata = L.idxlay.data
+                    except AttributeError:
+                        ldata = b''
+                    self._idxlay = self[i] = IdxLay(m, ldata)
                     self._idxlay_section_index = i
                 case 0x8000_0005:
-                    self._mtrcol = self[i] = MtrCol(m, L.mtrcol.data)
+                    try:
+                        ldata = L.mtrcol.data
+                    except AttributeError:
+                        ldata = b''
+                    self._mtrcol = self[i] = MtrCol(m, ldata)
                     self._mtrcol_section_index = i
                 case 0x8000_0006:
-                    self._mdlinfo = self[i] = MdlInfo(m, L.mdlinfo.data)
+                    try:
+                        ldata = L.mdlinfo.data
+                    except AttributeError:
+                        ldata = b''
+                    self._mdlinfo = self[i] = MdlInfo(m, ldata)
                     self._mdlinfo_section_index = i
                 case 0x8000_0010:
                     self._hielay = self[i] = HieLay(m)
                     self._hielay_section_index = i
                 case 0x8000_0020:
+                    self._lheader = self[i] = L
                     self._lheader_section_index = i
                 case 0x8000_0030:
                     self._nodelay = self[i] = NodeLay(m)
@@ -495,10 +357,7 @@ class TMC(Section):
 
     @property
     def mdlgeo(self):
-        try:
-            return self._mdlgeo
-        except AttributeError:
-            return self.Block(b'')
+        return self._mdlgeo
 
     @mdlgeo.setter
     def mdlgeo(self, val):
@@ -506,10 +365,7 @@ class TMC(Section):
 
     @property
     def ttdm(self):
-        try:
-            return self._ttdm
-        except AttributeError:
-            return self.Block(b'')
+        return self._ttdm
 
     @ttdm.setter
     def ttdm(self, val):
@@ -517,10 +373,7 @@ class TMC(Section):
 
     @property
     def vtxlay(self):
-        try:
-            return self._vtxlay
-        except AttributeError:
-            return self.Block(b'')
+        return self._vtxlay
 
     @vtxlay.setter
     def vtxlay(self, val):
@@ -528,10 +381,7 @@ class TMC(Section):
 
     @property
     def idxlay(self):
-        try:
-            return self._idxlay
-        except AttributeError:
-            return self.Block(b'')
+        return self._idxlay
 
     @idxlay.setter
     def idxlay(self, val):
@@ -539,10 +389,7 @@ class TMC(Section):
 
     @property
     def mtrcol(self):
-        try:
-            return self._mtrcol
-        except AttributeError:
-            return self.Block(b'')
+        return self._mtrcol
 
     @mtrcol.setter
     def mtrcol(self, val):
@@ -550,10 +397,7 @@ class TMC(Section):
 
     @property
     def mdlinfo(self):
-        try:
-            return self._mdlinfo
-        except AttributeError:
-            return self.Block(b'')
+        return self._mdlinfo
 
     @mdlinfo.setter
     def mdlinfo(self, val):
@@ -561,10 +405,7 @@ class TMC(Section):
 
     @property
     def hielay(self):
-        try:
-            return self._hielay
-        except AttributeError:
-            return self.Block(b'')
+        return self._hielay
 
     @hielay.setter
     def hielay(self, val):
@@ -572,10 +413,7 @@ class TMC(Section):
 
     @property
     def lheader(self):
-        try:
-            return self._lheader
-        except AttributeError:
-            return self.Block(b'')
+        return self._lheader
 
     @lheader.setter
     def lheader(self, val):
@@ -583,10 +421,7 @@ class TMC(Section):
 
     @property
     def nodelay(self):
-        try:
-            return self._nodelay
-        except AttributeError:
-            return self.Block(b'')
+        return self._nodelay
 
     @nodelay.setter
     def nodelay(self, val):
@@ -594,10 +429,7 @@ class TMC(Section):
 
     @property
     def glblmtx(self):
-        try:
-            return self._glblmtx
-        except AttributeError:
-            return self.Block(b'')
+        return self._glblmtx
 
     @glblmtx.setter
     def glblmtx(self, val):
@@ -605,10 +437,7 @@ class TMC(Section):
 
     @property
     def bnofsmtx(self):
-        try:
-            return self._bnofsmtx
-        except AttributeError:
-            return self.Block(b'')
+        return self._bnofsmtx
 
     @bnofsmtx.setter
     def bnofsmtx(self, val):
@@ -619,17 +448,24 @@ class TMC(Section):
         T = self._meta_info[0xc0:].cast('I')
         return T[:c]
 
-class ObjGeo(Section):
-    Block = Block
+class MdlGeo(Section):
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, ObjGeo)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def commit(self):
+        super().commit()
+        for i, objgeo in enumerate(self):
+            objgeo._id = i
+
+class ObjGeo(Section):
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, ObjGeoBlock)
         self._geodecl = GeoDecl(self._optional_data)
         for b in self:
-            T = ( self.Block.Texture(b.data[o:])
+            T = ( ObjGeoBlock.Texture(b.data[o:])
                   for o in b._texture_offset_table )
             b._textures = list(T)
-            b._outer = self
+            b._info_size = self.geodecl[b.decl_index].info_size
 
     def commit(self):
         super().commit()
@@ -646,182 +482,167 @@ class ObjGeo(Section):
 
     @property
     def _id(self):
-        return self._meta_info[0x4:].cast('i')[0]
+        return self._meta_info[0x4:0x8].cast('i')[0]
 
     @_id.setter
     def _id(self, val):
-        self._meta_info[0x4:].cast('i')[0] = val
+        self._meta_info[0x4:0x8].cast('i')[0] = val
 
-    class Block(Block):
-        @property
-        def textures(self):
-            return self._textures
+class ObjGeoBlock(Block):
+    @property
+    def textures(self):
+        return self._textures
+
+    @property
+    def _id(self):
+        return self.data[0x0:0x4].cast('i')[0]
+
+    @_id.setter
+    def _id(self, val):
+        self.data[0x0:0x4].cast('i')[0] = val
+
+    @property
+    def mtrcol_index(self):
+        return self.data[0x4:0x8].cast('i')[0]
+
+    @mtrcol_index.setter
+    def mtrcol_index(self, val):
+        self.data[0x4:0x8].cast('i')[0] = val
+
+    @property
+    def texture_count(self):
+        return self.data[0xc:0x10].cast('I')[0]
+
+    @property
+    def _texture_offset_table(self):
+        # max count = 8
+        return self.data[0x10:0x10 + 4*self.texture_count].cast('I')
+
+    @property
+    def decl_index(self):
+        return self.data[0x38:0x3c].cast('I')[0]
+
+    @decl_index.setter
+    def decl_index(self, val):
+        self.data[0x38:0x3c].cast('I')[0] = val
+
+    @property
+    def soft_transparency(self):
+        return self.data[0x40:0x44].cast('I')[0]
+
+    @soft_transparency.setter
+    def soft_transparency(self, val):
+        self.data[0x40:0x44].cast('I')[0] = val
+
+    @property
+    def hard_transparency(self):
+        return self.data[0x48:0x4c].cast('I')[0]
+
+    @hard_transparency.setter
+    def hard_transparency(self, val):
+        self.data[0x48:0x4c].cast('I')[0] = val
+
+    @property
+    def index_buffer_offset(self):
+        return self.data[0x30+self._info_size+0x10:].cast('I')[0]
+
+    @index_buffer_offset.setter
+    def index_buffer_offset(self, val):
+        self.data[0x30+self._info_size+0x10:].cast('I')[0] = val
+
+    @property
+    def ref_index_count(self):
+        return self.data[0x30+self._info_size+0x14:].cast('I')[0]
+
+    @ref_index_count.setter
+    def ref_index_count(self, val):
+        self.data[0x30+self._info_size+0x14:].cast('I')[0] = val
+
+    @property
+    def vertex_buffer_offset(self):
+        return self.data[0x30+self._info_size+0x18:].cast('I')[0]
+
+    @vertex_buffer_offset.setter
+    def vertex_buffer_offset(self, val):
+        self.data[0x30+self._info_size+0x18:].cast('I')[0] = val
+
+    @property
+    def ref_vertex_count(self):
+        return self.data[0x30+self._info_size+0x1c:].cast('I')[0]
+
+    @ref_vertex_count.setter
+    def ref_vertex_count(self, val):
+        self.data[0x30+self._info_size+0x1c:].cast('I')[0] = val
+
+    class Texture:
+        def __init__(self, data):
+            self._data = memoryview(data)
 
         @property
         def _id(self):
-            return self.data[0x0:].cast('i')[0]
+            return self._data[0x0:].cast('i')[0]
 
         @_id.setter
         def _id(self, val):
-            self.data[0x0:].cast('i')[0] = val
+            self._data[0x0:].cast('i')[0] = val
 
         @property
-        def mtrcol_index(self):
-            return self.data[0x4:].cast('i')[0]
+        def category(self):
+            return self._data[0x4:].cast('i')[0]
 
-        @mtrcol_index.setter
-        def mtrcol_index(self, val):
-            self.data[0x4:].cast('i')[0] = val
-
-        @property
-        def texture_count(self):
-            return self.data[0xc:].cast('I')[0]
+        @category.setter
+        def category(self, val):
+            self._data[0x4:].cast('i')[0] = val
 
         @property
-        def _texture_offset_table(self):
-            # max count = 8
-            return self.data[0x10:].cast('I')[:self.texture_count]
+        def buffer_index(self):
+            return self._data[0x8:].cast('i')[0]
 
-        @property
-        def decl_index(self):
-            return self.data[0x38:].cast('I')[0]
-
-        @decl_index.setter
-        def decl_index(self, val):
-            self.data[0x38:].cast('I')[0] = val
-
-        @property
-        def soft_transparency(self):
-            return self.data[0x40:].cast('I')[0] and True
-
-        @soft_transparency.setter
-        def soft_transparency(self, val):
-            self.data[0x40:].cast('I')[0] = bool(val)
-
-        @property
-        def hard_transparency(self):
-            return self.data[0x48:].cast('I')[0] and True
-
-        @hard_transparency.setter
-        def hard_transparency(self, val):
-            self.data[0x48:].cast('I')[0] = 0xc0 if val else 0
-
-        @property
-        def index_buffer_offset(self):
-            o = self._outer.geodecl[self.decl_index].info_size
-            return self.data[0x30+o+0x10:].cast('I')[0]
-
-        @index_buffer_offset.setter
-        def index_buffer_offset(self, val):
-            o = self._outer.geodecl[self.decl_index].info_size
-            self.data[0x30+o+0x10:].cast('I')[0] = val
-
-        @property
-        def ref_index_count(self):
-            o = self._outer.geodecl[self.decl_index].info_size
-            return self.data[0x30+o+0x14:].cast('I')[0]
-
-        @ref_index_count.setter
-        def ref_index_count(self, val):
-            o = self._outer.geodecl[self.decl_index].info_size
-            self.data[0x30+o+0x14:].cast('I')[0] = val
-
-        @property
-        def vertex_buffer_offset(self):
-            o = self._outer.geodecl[self.decl_index].info_size
-            return self.data[0x30+o+0x18:].cast('I')[0]
-
-        @vertex_buffer_offset.setter
-        def vertex_buffer_offset(self, val):
-            o = self._outer.geodecl[self.decl_index].info_size
-            self.data[0x30+o+0x18:].cast('I')[0] = val
-
-        @property
-        def ref_vertex_count(self):
-            o = self._outer.geodecl[self.decl_index].info_size
-            return self.data[0x30+o+0x1c:].cast('I')[0]
-
-        @ref_vertex_count.setter
-        def ref_vertex_count(self, val):
-            o = self._outer.geodecl[self.decl_index].info_size
-            self.data[0x30+o+0x1c:].cast('I')[0] = val
-
-        class Texture:
-            def __init__(self, data):
-                self._data = memoryview(data)
-
-            @property
-            def _id(self):
-                return self._data[0x0:].cast('i')[0]
-
-            @_id.setter
-            def _id(self, val):
-                self._data[0x0:].cast('i')[0] = val
-
-            @property
-            def category(self):
-                return self._data[0x4:].cast('i')[0]
-
-            @category.setter
-            def category(self, val):
-                self._data[0x4:].cast('i')[0] = val
-
-            @property
-            def buffer_index(self):
-                return self._data[0x8:].cast('i')[0]
-
-            @buffer_index.setter
-            def buffer_index(self, val):
-                self._data[0x8:].cast('i')[0] = val
-
-class MdlGeo(Section):
-    Block = ObjGeo
-
-    def commit(self):
-        super().commit()
-        for i, objgeo in enumerate(self):
-            objgeo._id = i
+        @buffer_index.setter
+        def buffer_index(self, val):
+            self._data[0x8:].cast('i')[0] = val
 
 class GeoDecl(Section):
-    class Block(Block):
-        @property
-        def info_size(self):
-            return self.data[0x4:].cast('I')[0]
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, GeoDeclBlock)
 
-        @property
-        def index_buffer_index(self):
-            return self.data[0xc:].cast('i')[0]
+class GeoDeclBlock(Block):
+    @property
+    def info_size(self):
+        return self.data[0x4:].cast('I')[0]
 
-        @index_buffer_index.setter
-        def index_buffer_index(self, val):
-            self.data[0xc:].cast('i')[0] = val
+    @property
+    def index_buffer_index(self):
+        return self.data[0xc:].cast('i')[0]
 
-        @property
-        def index_count(self):
-            return self.data[0x10:].cast('I')[0]
+    @index_buffer_index.setter
+    def index_buffer_index(self, val):
+        self.data[0xc:].cast('i')[0] = val
 
-        @property
-        def vertex_count(self):
-            return self.data[0x14:].cast('I')[0]
+    @property
+    def index_count(self):
+        return self.data[0x10:].cast('I')[0]
 
-        @property
-        def vertex_buffer_index(self):
-            o = self.info_size
-            return self.data[o:].cast('i')[0]
+    @property
+    def vertex_count(self):
+        return self.data[0x14:].cast('I')[0]
 
-        @vertex_buffer_index.setter
-        def vertex_buffer_index(self, val):
-            o = self.info_size
-            self.data[o:].cast('i')[0] = val
+    @property
+    def vertex_buffer_index(self):
+        o = self.info_size
+        return self.data[o:].cast('i')[0]
 
-        @property
-        def vertex_size(self):
-            o = self.info_size
-            return self.data[o+4:].cast('i')[0]
+    @vertex_buffer_index.setter
+    def vertex_buffer_index(self, val):
+        o = self.info_size
+        self.data[o:].cast('i')[0] = val
 
+    @property
+    def vertex_size(self):
+        o = self.info_size
+        return self.data[o+4:].cast('i')[0]
+    
 class TTDM(Section):
-    Block = Block
-
     def __init__(self, data, ldata = b''):
         super().__init__(data)
         try:
@@ -847,42 +668,46 @@ class TTDM(Section):
         return self._ttdl
 
 class TTDH(Section):
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, TTDHBlock)
+
     @staticmethod
     def makeblock():
-        return TTDH.Block(bytearray(0x20))
+        return TTDHBlock(bytearray(0x20))
 
-    class Block(Block):
-        @property
-        def is_in_L(self):
-            return self.data[0]
+class TTDHBlock(Block):
+    @property
+    def is_in_L(self):
+        return self.data[0]
 
-        @is_in_L.setter
-        def is_in_L(self, val):
-            self.data[0] = val
+    @is_in_L.setter
+    def is_in_L(self, val):
+        self.data[0] = val
 
-        @property
-        def ttdm_ttdl_index(self):
-            return self.data[0x4:].cast('i')[0]
+    @property
+    def ttdm_ttdl_index(self):
+        return self.data[0x4:0x8].cast('i')[0]
 
-        @ttdm_ttdl_index.setter
-        def ttdm_ttdl_index(self, val):
-            self.data[0x4:].cast('i')[0] = val
+    @ttdm_ttdl_index.setter
+    def ttdm_ttdl_index(self, val):
+        self.data[0x4:0x8].cast('i')[0] = val
 
 class TTDL(Section):
-    Block = Block
+    pass
 
 class VtxLay(Section):
-    Block = Block
+    pass
 
-class IdxLay(Section): Block = Block
+class IdxLay(Section):
+    pass
 
 class MtrCol(Section):
     def __init__(self, data, ldata = b''):
-        super().__init__(data, ldata)
+        super().__init__(data, ldata, MtrColBlock)
         for b in self:
-            X = ( b.data[0xd8:].cast('Q')[i:i+1].cast('b')
+            X = ( b.data[0xd0:].cast('Q')[i:i+1].cast('b')
                   for i in range(b.xrefs_count) )
-            b._xrefs = tuple( self.Block.Xref(x) for x in X )
+            b._xrefs = tuple( MtrColBlock.Xref(x) for x in X )
 
     def commit(self):
         super().commit()
@@ -895,65 +720,72 @@ class MtrCol(Section):
         #        + (objgeo_idx + refcount)*xrefs
         size = 4*4*13 + 4 + 4 + (4+4)*xrefs_count
         size += -size % 0x10
-        b = MtrCol.Block(bytearray(size))
+        b = MtrColBlock(bytearray(size))
         b._xrefs_count = xrefs_count
         X = ( b.data[0xd8:].cast('Q')[i:i+1].cast('b')
               for i in range(b.xrefs_count) )
         b._xrefs = tuple( MtrCol.Block.Xref(x) for x in X )
         return b
 
-    class Block(Block):
+class MtrColBlock(Block):
+    @property
+    def matrix(self):
+        return self.data[0:0xd0].cast('f')
+
+    @matrix.setter
+    def matrix(self, val):
+        self.data[0:0xd0].cast('f')[:] = val
+
+    @property
+    def _id(self):
+        return self.data[0xd0:0xd4].cast('i')[0]
+
+    @_id.setter
+    def _id(self, val):
+        self.data[0xd0:0xd4].cast('i')[0] = val
+
+    @property
+    def xrefs_count(self):
+        return self.data[0xd4:0xd8].cast('I')[0]
+
+    @xrefs_count.setter
+    def _xrefs_count(self, val):
+        self.data[0xd4:0xd8].cast('I')[0] = val
+
+    @property
+    def xrefs(self):
+        return self._xrefs
+
+    class Xref:
+        def __init__(self, data):
+            self._data = data.cast('i')
+
         @property
-        def matrix(self):
-            return self.data[0:0xd0].cast('f')
+        def index(self):
+            return self._data[0]
 
-        @matrix.setter
-        def matrix(self, val):
-            self.data[0:0xd0].cast('f')[:] = val
-
-        @property
-        def _id(self):
-            return self.data[0xd0:].cast('i')[0]
-
-        @_id.setter
-        def _id(self, val):
-            self.data[0xd0:].cast('i')[0] = val
+        @index.setter
+        def index(self, val):
+            self._data[0] = val
 
         @property
-        def xrefs_count(self):
-            return self.data[0xd4:].cast('I')[0]
+        def count(self):
+            return self._data[1]
 
-        @xrefs_count.setter
-        def _xrefs_count(self, val):
-            self.data[0xd4:].cast('I')[0] = val
+        @count.setter
+        def count(self, val):
+            self._data[1] = val
 
-        @property
-        def xrefs(self):
-            return self._xrefs
+class MdlInfo(Section):
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, ObjInfo)
 
-        class Xref:
-            def __init__(self, data):
-                self._data = data.cast('i')
-
-            @property
-            def index(self):
-                return self._data[0]
-
-            @index.setter
-            def index(self, val):
-                self._data[0] = val
-
-            @property
-            def count(self):
-                return self._data[1]
-
-            @count.setter
-            def count(self, val):
-                self._data[1] = val
+    def commit(self):
+        super().commit()
+        for i, objinfo in enumerate(self):
+            objinfo._id = i
 
 class ObjInfo(Section):
-    Block = Block
-
     @property
     def _id(self):
         return self._meta_info[0x4:].cast('i')[0]
@@ -962,68 +794,61 @@ class ObjInfo(Section):
     def _id(self, val):
         self._meta_info[0x4:].cast('i')[0] = val
 
-class MdlInfo(Section):
-    Block = ObjInfo
-
-    def commit(self):
-        super().commit()
-        for i, objinfo in enumerate(self):
-            objinfo._id = i
-
 class HieLay(Section):
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, HieLayBlock)
+
     @staticmethod
     def makeblock(children_count):
         # size = matrix + (parent_id + children_count + level + padding) + children_count
         size = 4*4*4 + (4+4+4+4) + 4*children_count
         size += -size % 0x10
-        b = HieLay.Block(bytearray(size))
+        b = HieLayBlock(bytearray(size))
         b._children_count = children_count
         return b
 
-    class Block(Block):
-        @property
-        def matrix(self):
-            return self.data.cast('f')[:4*4]
+class HieLayBlock(Block):
+    @property
+    def matrix(self):
+        return self.data.cast('f')[:4*4]
 
-        @matrix.setter
-        def matrix(self, val):
-            self.data.cast('f')[:4*4] = val
+    @matrix.setter
+    def matrix(self, val):
+        self.data.cast('f')[:4*4] = val
 
-        @property
-        def parent(self):
-            return self.data[0x40:].cast('i')[0]
+    @property
+    def parent(self):
+        return self.data[0x40:].cast('i')[0]
 
-        @parent.setter
-        def parent(self, val):
-            self.data[0x40:].cast('i')[0] = val
+    @parent.setter
+    def parent(self, val):
+        self.data[0x40:].cast('i')[0] = val
 
-        @property
-        def children_count(self):
-            return self.data[0x44:].cast('I')[0]
+    @property
+    def children_count(self):
+        return self.data[0x44:].cast('I')[0]
 
-        @children_count.setter
-        def _children_count(self, val):
-            self.data[0x44:].cast('I')[0] = val
+    @children_count.setter
+    def _children_count(self, val):
+        self.data[0x44:].cast('I')[0] = val
 
-        @property
-        def level(self):
-            return self.data[0x48:].cast('i')[0]
+    @property
+    def level(self):
+        return self.data[0x48:].cast('i')[0]
 
-        @level.setter
-        def level(self, val):
-            self.data[0x48:].cast('i')[0] = val
+    @level.setter
+    def level(self, val):
+        self.data[0x48:].cast('i')[0] = val
 
-        @property
-        def children(self):
-            return self.data[0x50:].cast('i')[:self.children_count]
+    @property
+    def children(self):
+        return self.data[0x50:].cast('i')[:self.children_count]
 
-        @children.setter
-        def children(self, val):
-            self.data[0x50:].cast('i')[:self.children_count] = val
+    @children.setter
+    def children(self, val):
+        self.data[0x50:].cast('i')[:self.children_count] = val
 
 class LHeader(Section):
-    Block = Block
-
     def __init__(self, data, ldata = b''):
         super().__init__(data, ldata)
         for i, t in enumerate(self._get_block_typeid_table()):
@@ -1073,10 +898,7 @@ class LHeader(Section):
 
     @property
     def mdlgeo(self):
-        try:
-            return self._mdlgeo
-        except AttributeError:
-            return self.Block(b'')
+        return self._mdlgeo
 
     @mdlgeo.setter
     def mdlgeo(self, val):
@@ -1084,10 +906,7 @@ class LHeader(Section):
 
     @property
     def ttdl(self):
-        try:
-            return self._ttdl
-        except AttributeError:
-            return self.Block(b'')
+        return self._ttdl
 
     @ttdl.setter
     def ttdl(self, val):
@@ -1095,10 +914,7 @@ class LHeader(Section):
 
     @property
     def vtxlay(self):
-        try:
-            return self._vtxlay
-        except AttributeError:
-            return self.Block(b'')
+        return self._vtxlay
 
     @vtxlay.setter
     def vtxlay(self, val):
@@ -1106,10 +922,7 @@ class LHeader(Section):
 
     @property
     def idxlay(self):
-        try:
-            return self._idxlay
-        except AttributeError:
-            return self.Block(b'')
+        return self._idxlay
 
     @idxlay.setter
     def idxlay(self, val):
@@ -1117,10 +930,7 @@ class LHeader(Section):
 
     @property
     def mtrcol(self):
-        try:
-            return self._mtrcol
-        except AttributeError:
-            return self.Block(b'')
+        return self._mtrcol
 
     @mtrcol.setter
     def mtrcol(self, val):
@@ -1128,10 +938,7 @@ class LHeader(Section):
 
     @property
     def mdlinfo(self):
-        try:
-            return self._mdlinfo
-        except AttributeError:
-            return self.Block(b'')
+        return self._mdlinfo
 
     @mdlinfo.setter
     def mdlinfo(self, val):
@@ -1139,10 +946,7 @@ class LHeader(Section):
 
     @property
     def hielay(self):
-        try:
-            return self._hielay
-        except AttributeError:
-            return self.Block(b'')
+        return self._hielay
 
     @hielay.setter
     def hielay(self, val):
@@ -1150,10 +954,7 @@ class LHeader(Section):
 
     @property
     def lheader(self):
-        try:
-            return self._lheader
-        except AttributeError:
-            return self.Block(b'')
+        return self._lheader
 
     @lheader.setter
     def lheader(self, val):
@@ -1161,10 +962,7 @@ class LHeader(Section):
 
     @property
     def nodelay(self):
-        try:
-            return self._nodelay
-        except AttributeError:
-            return self.Block(b'')
+        return self._nodelay
 
     @nodelay.setter
     def nodelay(self, val):
@@ -1172,10 +970,7 @@ class LHeader(Section):
 
     @property
     def glblmtx(self):
-        try:
-            return self._glblmtx
-        except AttributeError:
-            return self.Block(b'')
+        return self._glblmtx
 
     @glblmtx.setter
     def glblmtx(self, val):
@@ -1183,10 +978,7 @@ class LHeader(Section):
 
     @property
     def bnofsmtx(self):
-        try:
-            return self._bnofsmtx
-        except AttributeError:
-            return self.Block(b'')
+        return self._bnofsmtx
 
     @bnofsmtx.setter
     def bnofsmtx(self, val):
@@ -1197,40 +989,9 @@ class LHeader(Section):
         T = self._meta_info[0x20:].cast('I')
         return T[:c]
 
-class NodeObj(Section):
-    Block = Block
-
-    @property
-    def name(self):
-        return self._meta_info[0x10:].tobytes().partition(b'\x00')[0]
-
-    @property
-    def _id(self):
-        return self._meta_info[0x10:].tobytes().partition(b'\x00')[0]
-
-    @_id.setter
-    def _id(self, val):
-        self._meta_info[0x8:].cast('I')[0] = val
-
-    class Block(Block):
-        @property
-        def _object_index(self):
-            return self.data[0x0:].cast('I')[0]
-
-        @_object_index.setter
-        def _object_index(self, val):
-            self.data[0x0:].cast('I')[0] = val
-
-        @property
-        def _node_index(self):
-            return self.data[0x8:].cast('I')[0]
-
-        @_node_index.setter
-        def _node_index(self, val):
-            self.data[0x8:].cast('I')[0] = val
-
 class NodeLay(Section):
-    Block = NodeObj
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, NodeObj)
 
     def commit(self):
         super().commit()
@@ -1242,17 +1003,50 @@ class NodeLay(Section):
                 blk._node_index = i
                 j += 1
 
+class NodeObj(Section):
+    def __init__(self, data, ldata = b''):
+        super().__init__(data, ldata, NodeObjBlock)
+
+    @property
+    def name(self):
+        return self._meta_info[0x10:].tobytes().partition(b'\x00')[0]
+
+    @property
+    def _id(self):
+        return self._meta_info[0x10:].tobytes().partition(b'\x00')[0]
+
+    @_id.setter
+    def _id(self, val):
+        self._meta_info[0x8:0xc].cast('I')[0] = val
+
+class NodeObjBlock(Block):
+    @property
+    def _object_index(self):
+        return self.data[0x0:0x4].cast('I')[0]
+
+    @_object_index.setter
+    def _object_index(self, val):
+        self.data[0x0:0x4].cast('I')[0] = val
+
+    @property
+    def _node_index(self):
+        return self.data[0x8:0xc].cast('I')[0]
+
+    @_node_index.setter
+    def _node_index(self, val):
+        self.data[0x8:0xc].cast('I')[0] = val
+
 class GlblMtx(Section):
-    Block = Block
+    pass
 
 class BnOfsMtx(Section):
-    Block = Block
+    pass
 
 class cpf(Section):
-    Block = Block
+    pass
 
 class MCAPACK(Section):
-    Block = Block
+    pass
 
 class RENPACK(Section):
-    Block = Block
+    pass

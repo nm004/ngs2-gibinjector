@@ -41,18 +41,18 @@ def inject_optscat(databin, outdir):
     e_dgr_a = extract_tmc(databin, 1119, mutable=False)
 
     # e_nin_a
-    tmc_id = 1094
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1094
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 16, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_nin_c
-    tmc_id = 1262
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1262
+    tmc = extract_tmc(databin, data_id)
     remove_optscats(tmc)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
@@ -64,147 +64,147 @@ def inject_optscat(databin, outdir):
     copy_texture_buffer(e_okm_a, 5, tmc, 7)
     copy_texture_buffer(e_gja_a, 5, tmc, 6)
     set_optscat_texture_buffer(tmc, (5, 17, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_nin_d
-    tmc_id = 1383
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1383
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 15, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_jgm_a
-    tmc_id = 1090
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1090
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 13, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_jgm_c
-    tmc_id = 1333
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1333
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
     copy_texture_buffer(e_gja_a, 5, tmc, 6)
     set_optscat_texture_buffer(tmc, (5, 14, 6))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_jgm_d
-    tmc_id = 1817
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1817
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 5)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (5, 14, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_bni_a
-    tmc_id = 1311
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1311
+    tmc = extract_tmc(databin, data_id)
     remove_optscats(tmc)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 37)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (37, 38, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_you_a
-    tmc_id = 1235
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1235
+    tmc = extract_tmc(databin, data_id)
     remove_optscats(tmc)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 12)
     copy_texture_buffer(e_gja_a, 5, tmc, 4)
     set_optscat_texture_buffer(tmc, (12, 21, 4))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_you_c
-    tmc_id = 1359
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1359
+    tmc = extract_tmc(databin, data_id)
     remove_optscats(tmc)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
     set_optscat_texture_buffer(tmc, (1, 2, 0))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_you_d
-    tmc_id = 1366
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1366
+    tmc = extract_tmc(databin, data_id)
     remove_optscats(tmc)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, 12)
     copy_texture_buffer(e_gja_a, 5, tmc, 4)
     set_optscat_texture_buffer(tmc, (12, 21, 4))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_gja_b
-    tmc_id = 1167
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1167
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     set_optscat_texture_buffer(tmc, (4, 13, 5))
     sort_objects_by_nodename(tmc)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_gja_c
-    tmc_id = 1376
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1376
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     set_optscat_texture_buffer(tmc, (4, 13, 5))
     sort_objects_by_nodename(tmc)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_wlf_a
-    tmc_id = 1112
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1112
+    tmc = extract_tmc(databin, data_id)
     copy_texture_buffer(e_okm_a, 5, tmc, 11)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_wlf_b
-    tmc_id = 1364
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1364
+    tmc = extract_tmc(databin, data_id)
     copy_texture_buffer(e_okm_a, 5, tmc, 11)
     copy_texture_buffer(e_gja_a, 5, tmc, 0)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_chg_a
-    tmc_id = 1116
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1116
+    tmc = extract_tmc(databin, data_id)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (13, 21, 23))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # kage
-    tmc_id = 1138
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1138
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_chg_a, 13, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (17, 16, 18))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_kag_b
-    tmc_id = 1148
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1148
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc)
     copy_texture_buffer(e_chg_a, 13, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (8, 7, 9))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_van_* need their nodes to be sorted with the following
     # order to avoid a visual glitch. This is at least as I know
@@ -222,80 +222,80 @@ def inject_optscat(databin, outdir):
     key = lambda x: order[x[:3]]
 
     # e_van_a
-    tmc_id = 1107
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1107
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc, key=key)
     copy_texture_buffer(e_chg_a, 13, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (12, 11, 13))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_van_b
-    tmc_id = 1342
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1342
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc, key=key)
     copy_texture_buffer(e_chg_a, 13, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (12, 11, 13))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_van_c
-    tmc_id = 1361
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1361
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_dgr_a, tmc)
     sort_objects_by_nodename(tmc, key=key)
     copy_texture_buffer(e_chg_a, 13, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (12, 11, 13))
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_mac_a
-    tmc_id = 1178
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1178
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_tky_b, tmc)
     copy_texture_buffer(e_tky_b, 9, tmc, None)
     copy_texture_buffer(e_tky_b, 0, tmc, None)
     set_optscat_texture_buffer(tmc, (18, 17, 19))
     sort_objects_by_nodename(tmc)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_ciw_a
-    tmc_id = 1280
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1280
+    tmc = extract_tmc(databin, data_id)
     copy_texture_buffer(e_tky_b, 9, tmc, 8)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_ciw_b
-    tmc_id = 1284
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1284
+    tmc = extract_tmc(databin, data_id)
     copy_texture_buffer(e_tky_b, 9, tmc, 16)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_bat_b
-    tmc_id = 1085
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1085
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_okm_a, tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (3, 2, 4))
     sort_objects_by_nodename(tmc, key=key)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
     # e_bat_b
-    tmc_id = 1353
-    tmc = extract_tmc(databin, tmc_id)
+    data_id = 1353
+    tmc = extract_tmc(databin, data_id)
     copy_optscats(e_okm_a, tmc)
     copy_texture_buffer(e_okm_a, 5, tmc, None)
     copy_texture_buffer(e_gja_a, 5, tmc, None)
     set_optscat_texture_buffer(tmc, (5, 4, 6))
     sort_objects_by_nodename(tmc, key=key)
-    save_tmc(outdir, tmc, tmc_id)
+    save_tmc(outdir, tmc, data_id)
 
-def extract_tmc(databin, tmc_id, mutable = True):
-    tmc_data = databin.chunks[tmc_id].decompress()
-    tmcl_data = databin.chunks[tmc_id + 1].decompress()
+def extract_tmc(databin, data_id, mutable = True):
+    tmc_data = databin[data_id].decompress()
+    tmcl_data = databin[data_id + 1].decompress()
     if not mutable:
         return TMC(tmc_data, tmcl_data)
     else:
@@ -530,7 +530,7 @@ def sort_objects_by_nodename(tmc, /, *, key=None):
 
     tmc[13], tmc[14] = make_nodetypes(tmc, key=key)
 
-def save_tmc(outdir, tmc, tmc_id):
+def save_tmc(outdir, tmc, data_id):
     def save(data, i):
         path = os.path.join(outdir, f'{i:05}.dat')
         print(f"output: {path}")
@@ -547,8 +547,8 @@ def save_tmc(outdir, tmc, tmc_id):
     tmc.lheader.idxlay = LHeader.Block(tmc.idxlay.ldata)
 
     tmc.commit()
-    save(tmc.data, tmc_id)
-    save(tmc.lheader.ldata, tmc_id + 1)
+    save(tmc.data, data_id)
+    save(tmc.lheader.ldata, data_id + 1)
 
 # This assumes that the objects are soreted by their node name.
 def make_nodetypes(tmc, /, *, key=None):
