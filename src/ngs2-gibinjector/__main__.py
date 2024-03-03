@@ -12,7 +12,7 @@ import argparse
 from operator import itemgetter
 from databin import Databin
 from collections import Counter
-from tmc import TMC, LHeader, TTDH, MtrCol, HieLay, MdlGeo
+from tmc import Chunk, TMC, ObjGeo, TTDH, MtrCol, ObjInfo, HieLay, HieLayChunk, NodeObj
 
 def main():
     parser = argparse.ArgumentParser()
@@ -316,16 +316,20 @@ def copy_objects(src_tmc, object_idx, dst_tmc):
 
     getobj = itemgetter(*object_idx)
 
-    # These copies block in each section that refers to the object.
-    # We must copy ObjGeo and HieLay as mutable to modify them later.
-    dst_tmc.mdlgeo.extend( MdlGeo.Block(bytearray(objgeo.data))
-                           for objgeo in getobj(src_tmc.mdlgeo) )
-    dst_tmc.mdlinfo.extend(getobj(src_tmc.mdlinfo))
-    dst_tmc.hielay.extend( HieLay.Block(bytearray(h.data))
-                           for h in getobj(src_tmc.hielay) )
-    dst_tmc.nodelay.extend(getobj(src_tmc.nodelay))
-    dst_tmc.glblmtx.extend(getobj(src_tmc.glblmtx))
-    dst_tmc.bnofsmtx.extend(getobj(src_tmc.bnofsmtx))
+    # These copies chunk in each section that refers to the object.
+    # We must copy them as mutable to commit them later.
+    dst_tmc.mdlgeo.extend( ObjGeo(bytearray(c.data))
+                           for c in getobj(src_tmc.mdlgeo) )
+    dst_tmc.mdlinfo.extend( ObjInfo(bytearray(c.data))
+                            for c in getobj(src_tmc.mdlinfo) )
+    dst_tmc.hielay.extend( HieLayChunk(bytearray(c.data))
+                           for c in getobj(src_tmc.hielay) )
+    dst_tmc.nodelay.extend( NodeObj(bytearray(c.data))
+                            for c in getobj(src_tmc.nodelay) )
+    dst_tmc.glblmtx.extend( Chunk(bytearray(c.data))
+                            for c in getobj(src_tmc.glblmtx) )
+    dst_tmc.bnofsmtx.extend( Chunk(bytearray(c.data))
+                             for c in getobj(src_tmc.bnofsmtx) )
 
     # This copies the vertex buffers and the index buffers of the object.
     G = tuple( (g.vertex_buffer_index, g.index_buffer_index)
@@ -345,7 +349,7 @@ def copy_objects(src_tmc, object_idx, dst_tmc):
             i += 1
             j += 1
 
-    # This copies MtrCol blocks used by objects.
+    # This copies MtrCol chunks used by objects.
     mtrcol_I = ( (i, b.mtrcol_index)
                  for i, objgeo in enumerate(dst_tmc.mdlgeo)
                  for b in objgeo )
@@ -355,8 +359,8 @@ def copy_objects(src_tmc, object_idx, dst_tmc):
     old_new_mtrcol_idx = {}
     for b, i in new_mtrcols:
         old_new_mtrcol_idx[i] = len(dst_tmc.mtrcol)
-        counts = Counter(( j for j,k in mtrcol_I if k == i))
-        new_b = MtrCol.makeblock(len(counts))
+        counts = Counter( j for j,k in mtrcol_I if k == i )
+        new_b = MtrCol.makechunk(len(counts))
         new_b.matrix = b.matrix
         for j, (k, c) in enumerate(sorted(counts.items(), key=lambda x: x[0])):
             new_b.xrefs[j].index = k
@@ -369,13 +373,13 @@ def copy_objects(src_tmc, object_idx, dst_tmc):
         for b in objgeo:
             b.mtrcol_index = old_new_mtrcol_idx[b.mtrcol_index]
 
-    # This make new HieLay blocks that have an object as a child
+    # This make new HieLay chunks that have an object as a child
     n = len(dst_tmc.mdlgeo) - len(object_idx)
     for p in { b.parent for b in dst_tmc.hielay[n:] }:
         b = dst_tmc.hielay[p]
         new_children = tuple( i for i, c in enumerate(dst_tmc.hielay[n:], n)
                               if c.parent == p ) + tuple(b.children)
-        new_b = HieLay.makeblock(len(new_children))
+        new_b = HieLay.makechunk(len(new_children))
         new_b.matrix = b.matrix
         new_b.parent = b.parent
         new_b.level = b.level
@@ -397,14 +401,14 @@ def remove_objects(tmc, object_idx):
 
     obj_idx_diff = tuple( sum( j < i for j in object_idx ) for i in range(len(tmc.nodelay) ) )
 
-    # This remove child objects from HieLay blocks.
+    # This remove child objects from HieLay chunks.
     for i, b in enumerate(tmc.hielay):
         if i in object_idx:
             continue
         new_children = set(b.children) - set(object_idx)
         if len(new_children) == b.children_count:
             continue
-        new_b = HieLay.makeblock(len(new_children))
+        new_b = HieLay.makechunk(len(new_children))
         new_b.matrix = b.matrix
         new_b.parent = b.parent
         new_b.level = b.level
@@ -418,12 +422,12 @@ def remove_objects(tmc, object_idx):
         for i, c in enumerate(b.children):
             b.children[i] = c - obj_idx_diff[c]
 
-    # This removes xref objects from MtrCol blocks.
+    # This removes xref objects from MtrCol chunks.
     for i, b in enumerate(tmc.mtrcol):
         new_xrefs = { x for x in b.xrefs } - { x for x in b.xrefs if x.index in object_idx }
         if len(new_xrefs) == b.xrefs_count:
             continue
-        new_b = MtrCol.makeblock(len(new_xrefs))
+        new_b = MtrCol.makechunk(len(new_xrefs))
         new_b.matrix = b.matrix
         for j, x in enumerate(sorted(new_xrefs, key=lambda x: x.index)):
             new_b.xrefs[j].index = x.index
@@ -445,18 +449,18 @@ def remove_objects(tmc, object_idx):
 
 def copy_texture_buffer(src_tmc, src_tex_idx, dst_tmc, dst_tex_idx = None):
     H = src_tmc.ttdm.ttdh[src_tex_idx]
-    m_or_l = ( src_tmc.ttdm.ttdl if H.is_in_L
+    m_or_l = ( src_tmc.ttdm.ttdl if H.is_in_l
                else src_tmc.ttdm )
     stex = m_or_l[H.ttdm_ttdl_index]
 
     if dst_tex_idx != None:
         H = dst_tmc.ttdm.ttdh[dst_tex_idx]
-        m_or_l = ( dst_tmc.ttdm.ttdl if H.is_in_L
+        m_or_l = ( dst_tmc.ttdm.ttdl if H.is_in_l
                    else dst_tmc.ttdm )
         m_or_l[H.ttdm_ttdl_index] = stex
     else:
-        H = TTDH.makeblock()
-        H.is_in_L = True
+        H = TTDH.makechunk()
+        H.is_in_l = True
         H.ttdm_ttdl_index = len(dst_tmc.ttdm.ttdl)
         dst_tmc.ttdm.ttdh.append(H)
         dst_tmc.ttdm.ttdl.append(stex)
@@ -471,8 +475,8 @@ def set_optscat_texture_buffer(tmc, texbuf_idx):
 
 # This assumes that the original index is equal to the number where the object is
 # placed from the first place (from zero). This also sorts VtxLay and IdxLay based
-# on references from objects. As a side effect, it drops vtxlay blocks and idxlay
-# blocks which are not reffered by any objects.
+# on references from objects. As a side effect, it drops vtxlay chunks and idxlay
+# chunks which are not reffered by any objects.
 def sort_objects_by_nodename(tmc, /, *, key=None):
     assert len(tmc.mdlgeo) == len(tmc.nodelay)
     assert len(tmc.mdlinfo) == len(tmc.nodelay)
@@ -536,21 +540,11 @@ def save_tmc(outdir, tmc, data_id):
         print(f"output: {path}")
         with open(path, 'wb') as f:
             f.write(data)
-
-    # Original textures, vertex buffers and index buffers of NGS2 model data
-    # are in the TMCL file. We commit them first.
-    tmc.ttdm.ttdl.commit()
-    tmc.vtxlay.commit()
-    tmc.idxlay.commit()
-    tmc.lheader.ttdl = LHeader.Block(tmc.ttdm.ttdl.ldata)
-    tmc.lheader.vtxlay = LHeader.Block(tmc.vtxlay.ldata)
-    tmc.lheader.idxlay = LHeader.Block(tmc.idxlay.ldata)
-
     tmc.commit()
-    save(tmc.data, data_id)
-    save(tmc.lheader.ldata, data_id + 1)
+    save(tmc.mview, data_id)
+    save(tmc.lheader.lmview, data_id + 1)
 
-# This assumes that the objects are soreted by their node name.
+# This assumes that the objects are soreted
 def make_nodetypes(tmc, /, *, key=None):
     nodetype_map = {
         b'MOT': 1,
@@ -628,7 +622,8 @@ def make_nodetypes(tmc, /, *, key=None):
         else:
             raise ValueError(f'No matching OPT NodeObj subtype found for "{n}".')
 
-    return TMC.Block(head), TMC.Block(body)
+    return Chunk(head), Chunk(body)
 
 if __name__ == '__main__':
     main()
+
