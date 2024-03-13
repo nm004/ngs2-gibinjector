@@ -92,9 +92,9 @@ class Chunk:
         return self._info[0x14:0x16].cast('h')[0]
 
     @property
-    def chunk_group_id(self):
+    def chunk_category_id1(self):
         return self._info[0x16]
 
     @property
-    def chunk_category_id(self):
+    def chunk_category_id2(self):
         return self._info[0x17]
