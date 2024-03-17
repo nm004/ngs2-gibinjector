@@ -10,24 +10,21 @@ class Chunk(AbstractChunk):
     def __init__(self, data):
         if isinstance(data, AbstractChunk):
             data = data.data
-        self._data = data
+        self._mview = memoryview(data)
 
     def commit(self):
         pass
 
     @property
-    def data(self):
-        return self._data
-
-    @property
     def mview(self):
-        return memoryview(self.data)
+        return self._mview
 
 class Container(AbstractContainer):
     def __init__(self, data, ldata = None):
         if isinstance(data, AbstractChunk):
             data = data.data
-        self._data = data
+        data = data[:memoryview(data)[0x10:0x14].cast('I')[0]]
+        self._mview = memoryview(data)
 
         c = self.__class__.__name__.encode() 
         if c != self.magic:
@@ -35,7 +32,8 @@ class Container(AbstractContainer):
 
         if isinstance(ldata, AbstractChunk):
             ldata = ldata.data
-        self._ldata = ldata or b''
+        ldata = ldata[:memoryview(ldata)[0x4:0x8].cast('I')[0]] if ldata or b''
+        self._lmview = memoryview(ldata)
 
         magic = self.magic.decode()
         if self.info_size == 0x50:
@@ -56,7 +54,7 @@ class Container(AbstractContainer):
         self._meta_info = Chunk(self.meta_info_buf)
         self._optional_chunk = Chunk(self.optional_chunk_buf)
 
-        mview = self.lmview if self.ldata else self.mview
+        mview = self.lmview or self.mview
         O = self.chunk_ofs_table_buf
         if S := self.chunk_size_table_buf:
             self._chunks = list( Chunk(mview[o:(o+s)*bool(s)]) for o, s in zip(O, S) )
@@ -76,14 +74,14 @@ class Container(AbstractContainer):
 
     def commit(self, enable_l = None):
         if enable_l is None:
-            enable_l = bool(self.ldata)
+            enable_l = bool(self._lmview)
 
         for c in self.chunks:
             c.commit()
         self._meta_info.commit()
         self._optional_chunk.commit()
 
-        C = tuple( memoryview(c.data) for c in self.chunks )
+        C = tuple( c.mview for c in self.chunks )
 
         # These calculate sizes of new data
         info_size = 0x50 if enable_l else 0x30
@@ -99,8 +97,8 @@ class Container(AbstractContainer):
             (0, 0x10+self._meta_info.mview.nbytes, s) if enable_l else (s, 0, 0)
         )
 
-        self._data = bytearray(head_size + body_size)
-        self._ldata = bytearray(lhead_size + lbody_size)
+        self._mview = memoryview(bytearray(head_size + body_size))
+        self._lmview = memoryview(bytearray(lhead_size + lbody_size))
 
         # This writes the container info
         self.magic = self.__class__.__name__.encode()
@@ -124,7 +122,7 @@ class Container(AbstractContainer):
             self.lcontainer_check_digits = 0x01234567.to_bytes(4, 'little')
 
         # This writes the new meta info
-        self.meta_info_buf[:] = self._meta_info.mview
+        self.meta_info_buf[:] = self._meta_info.data
 
         # This writes the new chunk offset table
         o = lhead_size or head_size
@@ -139,10 +137,10 @@ class Container(AbstractContainer):
             self.chunk_size_table_buf[i] = C[i].nbytes
 
         # This writes the new optional data
-        self.optional_chunk_buf[:] = self._optional_chunk.mview
+        self.optional_chunk_buf[:] = self._optional_chunk.data
 
         # This writes the new chunks
-        mview = self.lmview if self.ldata else self.mview 
+        mview = self.lmview or self.mview
         for o, c in zip(self.chunk_ofs_table_buf, C, strict=True):
             mview[o:o+c.nbytes] = c
 
@@ -153,43 +151,35 @@ class Container(AbstractContainer):
         return self._chunks
 
     @property
-    def data(self):
-        return self._data
-
-    @property
-    def ldata(self):
-        return self._ldata
-
-    @property
-    def lmview(self):
-        return memoryview(self._ldata)[:self.lcontainer_size]
+    def mview(self):
+        return self._mview
 
     @property
     def lcontainer_size(self):
-        return memoryview(self.ldata)[0x4:0x8].cast('I')[0]
+        return self.lmview[0x4:0x8].cast('I')[0]
 
     @lcontainer_size.setter
     def lcontainer_size(self, val):
         self.mview[0x44:0x48].cast('I')[0] = val
-        memoryview(self.ldata)[0x4:0x8].cast('I')[0] = val
+        self.lmview[0x4:0x8].cast('I')[0] = val
 
     @property
     def lcontainer_chunk_count(self):
-        return memoryview(self.ldata)[0x0:0x4].cast('I')[0]
+        return self.lmview[0x0:0x4].cast('I')[0]
 
     @lcontainer_chunk_count.setter
     def lcontainer_chunk_count(self, val):
         self.mview[0x40:0x44].cast('I')[0] = val
-        memoryview(self.ldata)[0x0:0x4].cast('I')[0] = val
+        self.lmview[0x0:0x4].cast('I')[0] = val
 
     @property
     def lcontainer_check_digits(self):
-        return memoryview(self.ldata)[0x8:0xc].tobytes()
+        return self.lmview[0x8:0xc].tobytes()
 
     @lcontainer_check_digits.setter
     def lcontainer_check_digits(self, val):
         self.mview[0x48:0x4c] = val
-        memoryview(self.ldata)[0x8:0xc] = val
+        self.lmview[0x8:0xc] = val
 
 class TMC(Container):
     def __init__(self, data, ldata):
@@ -536,31 +526,31 @@ class ObjGeoChunk(Chunk):
 
     class Texture:
         def __init__(self, data):
-            self._data = memoryview(data)
+            self._mview = memoryview(data)
 
         @property
         def _id(self):
-            return self._data[0x0:].cast('i')[0]
+            return self._mview[0x0:].cast('i')[0]
 
         @_id.setter
         def _id(self, val):
-            self._data[0x0:].cast('i')[0] = val
+            self._mview[0x0:].cast('i')[0] = val
 
         @property
         def category(self):
-            return self._data[0x4:].cast('i')[0]
+            return self._mview[0x4:].cast('i')[0]
 
         @category.setter
         def category(self, val):
-            self._data[0x4:].cast('i')[0] = val
+            self._mview[0x4:].cast('i')[0] = val
 
         @property
         def buffer_index(self):
-            return self._data[0x8:].cast('i')[0]
+            return self._mview[0x8:].cast('i')[0]
 
         @buffer_index.setter
         def buffer_index(self, val):
-            self._data[0x8:].cast('i')[0] = val
+            self._mview[0x8:].cast('i')[0] = val
 
 class GeoDecl(Container):
     def __init__(self, data, ldata = None):
@@ -711,23 +701,23 @@ class MtrColChunk(Chunk):
 
     class Xref:
         def __init__(self, data):
-            self._data = data.cast('i')
+            self._mview = data.cast('i')
 
         @property
         def index(self):
-            return self._data[0]
+            return self._mview[0]
 
         @index.setter
         def index(self, val):
-            self._data[0] = val
+            self._mview[0] = val
 
         @property
         def count(self):
-            return self._data[1]
+            return self._mview[1]
 
         @count.setter
         def count(self, val):
-            self._data[1] = val
+            self._mview[1] = val
 
 class MdlInfo(Container):
     def __init__(self, data, ldata = None):
