@@ -30,8 +30,12 @@ class AbstractContainer(AbstractChunk, MutableSequence):
         pass
 
     @property
+    def raw_magic(self):
+        return self.mview[0:8].tobytes()
+
+    @property
     def magic(self):
-        return self.mview[0:8].tobytes().partition(b'\x00')[0]
+        return self.raw_magic.partition(b'\x00')[0]
 
     @magic.setter
     def magic(self, val):

@@ -32,7 +32,7 @@ class Container(AbstractContainer):
 
         if isinstance(ldata, AbstractChunk):
             ldata = ldata.data
-        ldata = ldata[:memoryview(ldata)[0x4:0x8].cast('I')[0]] if ldata or b''
+        ldata = ldata[:memoryview(ldata)[0x4:0x8].cast('I')[0]] if ldata else b''
         self._lmview = memoryview(ldata)
 
         magic = self.magic.decode()
