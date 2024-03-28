@@ -676,59 +676,59 @@ class ContainerParser:
 #     pass
 
 class MtrCol(Container):
+    matrices: list[array]
+
     @classmethod
     def from_bytes(cls, data):
-        pass
+        parser = MtrColParser(memoryview(data))
+        self.validate_magic(parser)
+        instance = cls()
+        instance.matrices = [ array('f', c.matrix) for c in parser.chunks ]
+        return instance
 
     def make_chunks(self):
         # size = matrix + index + xrefs_item_count
         #        + (objgeo_idx + refcount)*xrefs
         size = 4*4*13 + 4 + 4 + (4+4)*xrefs_count
-        size += -size % 0x10
-        b = MtrColChunk(bytearray(size))
-        b._xrefs_count = xrefs_count
-        X = ( b.mview[0xd8:].cast('Q')[i:i+1].cast('b')
-              for i in range(b.xrefs_count) )
-        b._xrefs = tuple( MtrColChunk.Xref(x) for x in X )
+        def f():
+            for i, m in enumerate(self.matrices):
+                B = bytearray()
+                B += bytes(m)
+                yield B
+        return tuple(B)
 
-        for i, c in enumerate(self):
-            c._id = i
-
-        return b
+def MtrColParser(ContainerParser):
+    def __post_init__(self):
+        super().__post_init__()
+        self.chunks = tuple( MtrColChunkParser(c) for c in self.chunks )
 
 class MtrColChunkParser:
+    data: memoryview
+    matrix: memoryview = field(init=False)
+    mtrcol_id: int = field(init=False)
+    xrefs_count: int = field(init=False)
+    xrefs: tuple[int, int] = field(init=False)
+
     def __post_init__(self):
         self.matrix = self.data[0:0xd0].cast('f')
         self.mtrcol_id = int.from_bytes(self.data[0xd0:0xd4], 'little', signed=True)
         self.xrefs_count = int.from_bytes(self.data[0xd4:0xd8], 'little')
-        for b in self:
-            X = ( b.mview[0xd0:].cast('Q')[i:i+1].cast('b')
-                  for i in range(b.xrefs_count) )
-            b._xrefs = tuple( MtrColChunk.Xref(x) for x in X )
+        def f():
+            for i in range(self.xrefs_count):
+                o = 0xd0 + i*8
+                index = int.from_bytes(self.data[o:o+4], 'little', signed=True)
+                count = int.from_bytes(self.data[o+4:o+8], 'little')
+                yield (index, count)
+        self.xref = tuple(f())
 
-
-        xrefs = self._xrefs
-
-    class Xref:
-        def __init__(self, data):
-            self._mview = data.cast('i')
-
-        @property
-        def index(self):
-            return self._mview[0]
-
-        @property
-        def count(self):
-            return self._mview[1]
 
 class MdlInfo(Container):
-    def from_bytes(self, data):
-        pass
+    _chunks: list
 
-    def commit(self):
-        super().commit()
+    def make_chunks(self):
         for i, objinfo in enumerate(self):
             objinfo._id = i
+        return tuple(self.chunks)
 
 class ObjInfoParser(ContainerParser):
     data: memoryview
@@ -929,6 +929,7 @@ class NodeObjParser(ContainerParser):
             self.children = c.data[0x50:0x50+4*c.children_count].cast('i')
 
 class GlblMtx(Container):
+    _MAGIC = b'GlblMtx'
     matrices: list[array]
 
     @classmethod
@@ -944,6 +945,7 @@ class GlblMtxParser(ContainerParser):
         self.chunks = tuple( c.cast('f') for c in self.chunks )
 
 class BnOfsMtx(Container):
+    _MAGIC = b'BnOfsMtx'
     matrices: list[array]
 
     @classmethod
