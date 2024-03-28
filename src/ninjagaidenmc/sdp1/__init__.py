@@ -1,123 +1,32 @@
-from dataclasses import dataclass
+from __future__ import annotations
+from dataclasses import dataclass, field, InitVar
+from typing import ClassVar
 from array import array
-from abc import ABC, abstractmethod
+from abc import ABC
 from itertools import chain
 
-class Pack(ABC):
-    def __init__(self):
-        self._packs = []
-        self.unknown1 = 0
-
-    @classmethod
-    @abstractmethod
-    def magic(cls):
-        pass
+class Pack:
+    _MAGIC: ClassVar[bytes]
+    packs: list[tuple[Param]]
+    unknown1: int
 
     @classmethod
     def from_bytes(cls, data):
+        parser = PackParser(memoryview(data).toreadonly())
+        if parser.magic != cls._MAGIC:
+            raise ValueError(f"data has no magic bytes {cls._MAGIC.decode()}")
         instance = cls()
-
-        data = memoryview(data)
-        pack_parser = PackParser(data)
-
-        if pack_parser.magic != cls.magic:
-            raise ValueError(f"data has no magic bytes {cls.magic}")
-
-        data = memoryview(data[:pack_parser.size])
-
-        def f():
-            o1 = pack_parser.param_info_table_ofs
-            o2 = pack_parser.pack_table_ofs
-
-            n = 4*pack_parser.pack_size
-            for j in range(pack_parser.pack_count):
-                o = o2+j*n
-                yield tuple(g(data[o1:o2], data[o:o+n]))
-
-        def g(I, P):
-            J = tuple(h(I))
-            for j in J:
-                o = 4*j.param_index
-                enabled = int.from_bytes(P[o:o+4], 'little')
-                match j.value_type:
-                    case 0x01:
-                        value = P[o+4]
-                    case 0x02:
-                        value = int.from_bytes(P[o+4:o+8], 'little')
-                    case 0x04:
-                        value = P[o+4:o+8].cast('f')[0]
-                    case 0x12 | 0x14:
-                        x = { 0x12: 'I', 0x14: 'f' }[j.value_type]
-                        n = j.array_size
-                        o = enabled
-                        value = ( array(x, bytes(data[o:o+4*n]))
-                                  if enabled else array(x, (0 for _ in range(n))) )
-                    case 0x40:
-                        o = enabled
-                        value = ( BankPack.from_bytes(data[o:])
-                                  if enabled else BankPack() )
-                    case 0x80:
-                        n = int.from_bytes(P[o+4:o+8], 'little')
-                        o = enabled
-                        value = ( EffectPack.from_bytes(data[o:o+n])
-                                  if enabled else EffectPack() )
-                    case _:
-                        raise ValueError(f"unknown value type {pi.value_type}")
-
-                o = 4*j.param_id_ofs
-                yield Param(bool(enabled), value, j.linked_param, bytes(I[o:o+4*I[o+3]]))
-
-        def h(I):
-            for i in range(pack_parser.param_count):
-                o = 0x10*i
-                yield ParamInfoParser(I[o:o+0x10])
-
-        instance.packs.extend(f())
-        instance.unknown1 = pack_parser.unknown1
+        instance.packs = parser.to_list()
+        instance.unknown1 = parser.unknown1
         return instance
-
-    @property
-    def packs(self):
-        return self._packs
-
-    @property
-    def nbytes(self):
-        return self._size()[-1]
-
-    def _size(self):
-        if not len(self.packs):
-            return (0,0,0,0,0,0x30)
-
-        param_info_table_size = 0x10 * len(self.packs[0]) + sum(len(p.param_id) for p in self.packs[0])
-        param_info_table_size += -param_info_table_size % 0x10
-
-        pack_size = sum( isinstance(p.value, array) or 2 for p in self.packs[0] )
-        pack_table_size = 4*pack_size * len(self.packs)
-        pack_table_size += -pack_table_size % 0x10
-
-        array_table_size = sum( p.value.itemsize * len(p.value)
-                                for p in chain.from_iterable(self.packs)
-                                if isinstance(p.value, array) )
-        array_table_size += -array_table_size % 0x10
-
-        P = ( p for p in chain.from_iterable(self.packs)
-              if ( isinstance(p.value, BankPack)
-                   or isinstance(p.value, EffectPack) ))
-        blob_table_size = sum( bool(p.enabled) * p.value.nbytes for p in P )
-        blob_table_size += -blob_table_size % 0x10
-
-        total_size = (0x30 + param_info_table_size + pack_table_size
-                      + array_table_size + blob_table_size)
-
-        return (param_info_table_size, pack_size, pack_table_size,
-                array_table_size, blob_table_size, total_size)
 
     def __bytes__(self):
         (param_info_table_size, pack_size, pack_table_size,
          array_table_size, blob_table_size, total_size) = self._size()
 
+        # This writes the header
         B = bytearray(total_size)
-        B[0x0:0x8] = self.magic
+        B[0x0:0x8] = self._MAGIC.ljust(0x8, b'\x00')
         B[0x8:0xc] = b'1PDS'
         B[0xc:0x10] = len(B).to_bytes(4, 'little')
         B[0x10:0x14] = len(self.packs[0]).to_bytes(4, 'little')
@@ -135,6 +44,7 @@ class Pack(ABC):
         blob_table_ofs = bool(blob_table_size) * o
         B[0x2c:0x30] = blob_table_ofs.to_bytes(4, 'little')
 
+        # This writes param info table
         o1 = 0
         o2 = 0x30 + 0x10 * len(self.packs[0]) 
         for i, p in enumerate(self.packs[0]):
@@ -169,10 +79,11 @@ class Pack(ABC):
             B[o+0x4:o+0x8] = o1.to_bytes(4, 'little')
             o1 += x
             B[o+0x8:o+0xc] = ((o2-0x30)//4).to_bytes(4, 'little')
-            B[o2:o2+len(p.param_id)] = p.param_id
-            o2 += len(p.param_id)
-            B[o+0xc:o+0x10] = p.linked_param.to_bytes(4, 'little')
+            B[o2:o2+len(p._param_id)] = p._param_id
+            o2 += len(p._param_id)
+            B[o+0xc:o+0x10] = p._next_param.to_bytes(4, 'little')
 
+        # This writes pack table, array table and blob table
         o1 = pack_table_ofs
         o2 = array_table_ofs
         o3 = blob_table_ofs
@@ -217,115 +128,165 @@ class Pack(ABC):
 
         return bytes(B)
 
+    @property
+    def _nbytes(self):
+        return self._size()[-1]
+
+    def _size(self):
+        if not len(self.packs):
+            return (0,0,0,0,0,0x30)
+
+        param_info_table_size = 0x10 * len(self.packs[0]) + sum(len(p.param_id) for p in self.packs[0])
+        param_info_table_size += -param_info_table_size % 0x10
+
+        pack_size = sum( isinstance(p.value, array) or 2 for p in self.packs[0] )
+        pack_table_size = 4*pack_size * len(self.packs)
+        pack_table_size += -pack_table_size % 0x10
+
+        array_table_size = sum( p.value.itemsize * len(p.value)
+                                for p in chain.from_iterable(self.packs)
+                                if isinstance(p.value, array) )
+        array_table_size += -array_table_size % 0x10
+
+        P = ( p for p in chain.from_iterable(self.packs)
+              if ( isinstance(p.value, BankPack)
+                   or isinstance(p.value, EffectPack) ))
+        blob_table_size = sum( bool(p.enabled) * p.value._nbytes for p in P )
+        blob_table_size += -blob_table_size % 0x10
+
+        total_size = (0x30 + param_info_table_size + pack_table_size
+                      + array_table_size + blob_table_size)
+
+        return (param_info_table_size, pack_size, pack_table_size,
+                array_table_size, blob_table_size, total_size)
+
+@dataclass
 class PackParser:
-    def __init__(self, data):
-        self._data = memoryview(data)
+    data: memoryview
+    magic: bytes = field(init=False)
+    version: bytes = field(init=False)
+    size: int = field(init=False)
+    param_count: int = field(init=False)
+    unknown1: int = field(init=False)
+    pack_count: int = field(init=False)
+    pack_size: int = field(init=False)
+    param_info_table_ofs: int = field(init=False)
+    pack_table_ofs: int = field(init=False)
+    array_table_ofs: int = field(init=False)
+    blob_table_ofs: int = field(init=False)
+    param_info: tuple[ParamInfoParser] = field(init=False)
+    pack_table: tuple[memoryview] = field(init=False)
+    def __post_init__(self):
+        self.magic = bytes(self.data[0x0:0x8])
+        self.version = bytes(self.data[0x8:0xc])
+        self.size = int.from_bytes(self.data[0xc:0x10], 'little')
+        self.param_count = int.from_bytes(self.data[0x10:0x14], 'little')
+        self.unknown1 = int.from_bytes(self.data[0x14:0x18], 'little')
+        self.pack_count = int.from_bytes(self.data[0x18:0x1c], 'little')
+        self.pack_size = int.from_bytes(self.data[0x1c:0x20], 'little')
+        self.param_info_table_ofs = int.from_bytes(self.data[0x20:0x24], 'little')
+        self.pack_table_ofs = int.from_bytes(self.data[0x24:0x28], 'little')
+        self.array_table_ofs = int.from_bytes(self.data[0x28:0x2c], 'little')
+        self.blob_table_ofs =  int.from_bytes(self.data[0x2c:0x30], 'little')
+        
+        o1 = self.param_info_table_ofs
+        o2 = self.pack_table_ofs
+        T = self.data[o1:o2]
+        o = self.param_info_table_ofs
+        self.param_info = tuple( ParamInfoParser(self.data[o+0x10*i:o+0x10*(i+1)], T)
+                                 for i in range(self.param_count) )
 
-    @property
-    def raw_magic(self):
-        return bytes(self._data[0:8])
+        n = 4*self.pack_size
+        o = self.pack_table_ofs
+        self.pack_table = tuple( self.data[o+i*n:o+(i+1)*n]
+                                 for i in range(self.pack_count) )
 
-    @property
-    def magic(self):
-        return self.raw_magic.partition(b'\x00')[0]
+        self.data = self.data[:self.size]
 
-    @property
-    def version(self):
-        return bytes(self._data[0x8:0xc])
+    def to_list(self):
+        def g(P):
+            for pi in self.param_info:
+                o = 4*pi.param_index
+                enabled = int.from_bytes(P[o:o+4], 'little')
+                match pi.value_type:
+                    case 0x01:
+                        value = P[o+4]
+                    case 0x02:
+                        value = int.from_bytes(P[o+4:o+8], 'little')
+                    case 0x04:
+                        value = P[o+4:o+8].cast('f')[0]
+                    case 0x12 | 0x14:
+                        x = { 0x12: 'I', 0x14: 'f' }[pi.value_type]
+                        o1 = enabled
+                        o2 = o1 + 4*pi.array_size
+                        value = ( array(x, bytes(self.data[o1:o2]))
+                                  if enabled else array(x, (0 for _ in range(n))) )
+                    case 0x40:
+                        o = enabled
+                        value = ( BankPack.from_bytes(self.data[o:])
+                                  if enabled else BankPack() )
+                    case 0x80:
+                        o1 = enabled
+                        o2 = o1 + int.from_bytes(P[o+4:o+8], 'little')
+                        value = ( EffectPack.from_bytes(self.data[o1:o2])
+                                  if enabled else EffectPack() )
+                    case _:
+                        raise ValueError(f"unknown value type {pi.value_type}")
 
-    @property
-    def size(self):
-        return self._data[0xc:0x10].cast('I')[0]
+                yield Param(bool(enabled), value, pi.param_id, pi._next_param)
 
-    @property
-    def param_count(self):
-        return self._data[0x10:0x14].cast('I')[0]
+        return list( tuple(g(p)) for p in self.pack_table )
 
-    @property
-    def unknown1(self):
-        return self._data[0x14:0x18].cast('I')[0]
-
-    @property
-    def pack_count(self):
-        return self._data[0x18:0x1c].cast('I')[0]
-
-    @property
-    def pack_size(self):
-        return self._data[0x1c:0x20].cast('I')[0]
-
-    @property
-    def param_info_table_ofs(self):
-        return self._data[0x20:0x24].cast('I')[0]
-
-    @property
-    def pack_table_ofs(self):
-        return self._data[0x24:0x28].cast('I')[0]
-
-    @property
-    def array_table_ofs(self):
-        return self._data[0x28:0x2c].cast('I')[0]
-
-    @property
-    def blob_table_ofs(self):
-        return self._data[0x2c:0x30].cast('I')[0]
-
+# This could be a hash table with separate chaining,
+# but I have no idea about the hash function used for this table.
+@dataclass
 class ParamInfoParser:
-    def __init__(self, data):
-        self._data = memoryview(data)
+    data: memoryview
+    param_info_table: InitVar[memoryview]
+    array_size: int = field(init=False)
+    value_type: int = field(init=False)
+    param_index: int = field(init=False)
+    param_id_ofs: int = field(init=False)
+    param_id: memoryview = field(init=False)
 
-    @property
-    def array_size(self):
-        return self._data[0x0:0x4].cast('I')[0] & 0x00ffffff
+    # MSB is high if this is the first node of a bucket. Otherwise, it is low.
+    # It is -1 (0x7FFFFFFF) when next node is null.
+    _next_param: int = field(init=False)
 
-    @property
-    def value_type(self):
-        return self._data[0x3]
+    def __post_init__(self, param_info_table):
+        self.array_size = int.from_bytes(self.data[0x0:0x4], 'little') & 0x00ffffff
+        self.value_type = self.data[0x3]
+        self.param_index = int.from_bytes(self.data[0x4:0x8], 'little')
+        self.param_id_ofs = int.from_bytes(self.data[0x8:0xc], 'little')
+        o = 4*self.param_id_ofs
+        T = param_info_table
+        self.param_id = T[o:o+4*T[o+3]]
+        self._next_param = int.from_bytes(self.data[0xc:0x10], 'little')
 
-    @property
-    def param_index(self):
-        return self._data[0x4:0x8].cast('I')[0]
-
-    @property
-    def param_id_ofs(self):
-        return self._data[0x8:0xc].cast('I')[0]
-
-    @property
-    def linked_param(self):
-        return self._data[0xc:0x10].cast('I')[0]
-
-class EPM1(Pack):
-    @classmethod
-    @property
-    def magic(cls):
-        return b'EPM1'
-
-class WorkPack(Pack):
-    @classmethod
-    @property
-    def magic(cls):
-        return b'WorkPack'
-
-class BankPack(Pack):
-    @classmethod
-    @property
-    def magic(cls):
-        return b'BankPack'
-
+@dataclass
 class TexIndex:
     @classmethod
     def from_bytes(cls, data):
         instance = cls()
-        instance._data = memoryview(bytes(data))
+        instance._data = memoryview(bytes(data)))
         return instance
 
     @property
-    def nbytes(self):
+    def _nbytes(self):
         return self._data.nbytes
 
     def __bytes__(self):
         return bytes(self._data)
 
-@dataclass
+class EPM1(Pack):
+    _MAGIC = b'EPM1'.ljust(8, b'\x00')
+
+class WorkPack(Pack):
+    _MAGIC = b'WorkPack'
+
+class BankPack(Pack):
+    _MAGIC = b'BankPack'
+
 class EffectPack:
     name: bytes = b''
     pack_id: int = 0
@@ -335,28 +296,18 @@ class EffectPack:
 
     @classmethod
     def from_bytes(cls, data):
-        data = memoryview(data)
-        effect_pack_parser = EffectPackParser(data)
-        unknown1 = effect_pack_parser.unknown1
-        unknown2 = effect_pack_parser.unknown2
-
-        match effect_pack_parser.data_count:
-            case 1:
-                x = WorkPack if unknown1 == -1 else TexIndex
-                packs = (x.from_bytes(data[0x20:]),)
-            case 2:
-                o = PackParser(data[0x20:]).size
-                packs = (WorkPack.from_bytes(data[0x20:]),
-                         TexIndex.from_bytes(data[0x20+o:]))
-            case x:
-                raise ValueError(f'unknown value count {x}')
-
-        return cls(effect_pack_parser.name, effect_pack_parser.pack_id, packs,
-                   unknown1, unknown2)
+        parser = EffectPackParser(memoryview(data).toreadonly())
+        instance = cls()
+        instance.name = parser.name
+        instance.pack_id = parser.pack_id
+        instance.packs = parser.to_tuple()
+        instance.unknown1 = parser.unknown1
+        instance.unknown2 = parser.unknown2
+        return instance
 
     @property
-    def nbytes(self):
-        return sum( p.nbytes for p in self.packs )
+    def _nbytes(self):
+        return sum( p._nbytes for p in self.packs )
 
     def __bytes__(self):
         B = bytearray(0x20)
@@ -369,34 +320,38 @@ class EffectPack:
             B += bytes(p)
         return bytes(B)
 
+@dataclass
 class EffectPackParser:
-    def __init__(self, data):
-        self._data = memoryview(data)
+    data: memoryview
+    name: bytes = field(init=False)
+    pack_id: int = field(init=False)
+    data_count: int = field(init=False)
+    # It looks like these are the first indices of something
+    unknown1: int = field(init=False)
+    unknown2: int = field(init=False)
 
-    @property
-    def name(self):
-        return bytes(self._data[0:0x10])
+    def __post_init__(self):
+        self.name = bytes(self.data[0:0x10])
+        self.pack_id = int.from_bytes(self.data[0x10:0x14], 'little')
+        self.data_count = int.from_bytes(self.data[0x14:0x18], 'little')
+        self.unknown1 = int.from_bytes(self.data[0x18:0x1c], 'little', signed=True)
+        self.unknown2 = int.from_bytes(self.data[0x1c:0x20], 'little', signed=True)
 
-    @property
-    def pack_id(self):
-        return self._data[0x10:0x14].cast('I')[0]
-
-    @property
-    def data_count(self):
-        return self._data[0x14:0x18].cast('I')[0]
-        
-    @property
-    def unknown1(self):
-        return self._data[0x18:0x1c].cast('i')[0]
-        
-    @property
-    def unknown2(self):
-        return self._data[0x1c:0x20].cast('i')[0]
+    def to_tuple(self):
+        match parser.data_count:
+            case 1:
+                x = WorkPack if unknown1 == -1 else TexIndex
+                return (x.from_bytes(self.data[0x20:]),)
+            case 2:
+                o = PackParser(data[0x20:]).size
+                return (WorkPack.from_bytes(self.data[0x20:]),
+                        TexIndex.from_bytes(self.data[o+0x20:]))
+            case x:
+                raise ValueError(f'unknown value count {x}')
 
 @dataclass
 class Param:
     enabled: bool = False
     value: EffectPack | BankPack | bool | int | float | array = False
-    linked_param: int = -1
-    param_id: bytes = b''
-
+    _param_id: bytes = b''
+    _next_param: int = -1
