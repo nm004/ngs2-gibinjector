@@ -11,102 +11,92 @@ from typing import ClassVar, Self
 from array import array
 from dataclasses import dataclass, field
 
-class Container:
-    _MAGIC: ClassVar[bytes]
-
-    @classmethod
-    def validate_magic(cls, parser):
-        if parser.magic != cls._MAGIC:
-            raise ValueError(f'data does not have magic bytes "{cls._MAGIC.decode()}".')
-
-    def __bytes__(self):
-
-        chunks = tuple( memoryview(c) for c in self.make_chunks() )
-
-        optional_chunk = memoryview(self.make_optional_chunk())
-        meta_info = memoryview(self.make_meta_info())
+def serialize(chunks, magic_bytes, enable_L = False, meta_info = b'', optional_chunk = b''):
+    chunks = tuple( memoryview(c) for c in chunks )
+    optional_chunk = memoryview(optional_chunk)
+    meta_info = memoryview(meta_info)
         
-        # These calculate sizes of new data
-        info_size = bool(self.enable_L) * 0x30 or 0x50
+    # These calculate sizes of new data
+    info_size = bool(enable_L) * 0x30 or 0x50
 
-        meta_info_size = meta_info.nbytes + -meta_info.nbytes % 0x10
-        chunk_ofs_table_size = 4*len(chunks)
-        chunk_ofs_table_size += -4*len(chunks) % 0x10
-        chunk_size_table_size = chunk_ofs_table_size * any( c.nbytes % 0x10 for c in C )
-        optional_chunk_size = optional_chunk.nbytes + -optional_chunk.nbytes % 0x10
-        total_chunk_size = sum( c.nbytes + -c.nbytes % 0x10 for c in chunks )
-        total_size = ( info_size
-                       + meta_info_size
-                       + chunk_ofs_table_size
-                       + chunk_size_table_size
-                       + optional_chunk_size
-                       + total_chunk_size )
-        B = bytearray(total_size)
-        B[0:8] = self._MAGIC
-        B[0x8:0xc] = 0x00000101.to_bytes(4)
-        B[0xc:0x10] = info_size.to_bytes(4, 'little')
-        B[0x10:0x14] = total_size.to_bytes(4, 'little')
-        B[0x14:0x18] = len(chunks).to_bytes(4, 'little')
-        valid_chunk_count = sum( c.nbytes > 0 for c in chunks )
-        B[0x18:0x1c] = valid_chunk_count.to_bytes(4, 'little')
+    meta_info_size = meta_info.nbytes + -meta_info.nbytes % 0x10
+    chunk_ofs_table_size = 4*len(chunks)
+    chunk_ofs_table_size += -4*len(chunks) % 0x10
+    chunk_size_table_size = chunk_ofs_table_size * any( c.nbytes % 0x10 for c in C )
+    optional_chunk_size = optional_chunk.nbytes + -optional_chunk.nbytes % 0x10
+    total_chunk_size = sum( c.nbytes + -c.nbytes % 0x10 for c in chunks )
+    total_size = ( info_size
+                   + meta_info_size
+                   + chunk_ofs_table_size
+                   + chunk_size_table_size
+                   + optional_chunk_size
+                   + total_chunk_size )
+    B = bytearray(total_size)
+    B[0:8] = magic_bytes
+    B[0x8:0xc] = 0x00000101.to_bytes(4)
+    B[0xc:0x10] = info_size.to_bytes(4, 'little')
+    B[0x10:0x14] = total_size.to_bytes(4, 'little')
+    B[0x14:0x18] = len(chunks).to_bytes(4, 'little')
+    valid_chunk_count = sum( c.nbytes > 0 for c in chunks )
+    B[0x18:0x1c] = valid_chunk_count.to_bytes(4, 'little')
 
-        n = info_size + meta_info.nbytes
-        chunk_ofs_table_ofs = n * bool(chunk_ofs_table_size)
-        B[0x20:0x24] = chunk_ofs_table_ofs.to_bytes(4, 'little')
-        n += chunk_ofs_table_size
-        chunk_size_table_ofs = n * bool(chunk_size_table_size)
-        B[0x24:0x28] = chunk_size_table_ofs.to_bytes(4, 'little')
-        n += chunk_size_table_size
-        optional_chunk_ofs = n * bool(optional_chunk)
-        B[0x28:0x2c] = optional_chunk_ofs.to_bytes(4, 'little')
+    n = info_size + meta_info.nbytes
+    chunk_ofs_table_ofs = n * bool(chunk_ofs_table_size)
+    B[0x20:0x24] = chunk_ofs_table_ofs.to_bytes(4, 'little')
+    n += chunk_ofs_table_size
+    chunk_size_table_ofs = n * bool(chunk_size_table_size)
+    B[0x24:0x28] = chunk_size_table_ofs.to_bytes(4, 'little')
+    n += chunk_size_table_size
+    optional_chunk_ofs = n * bool(optional_chunk)
+    B[0x28:0x2c] = optional_chunk_ofs.to_bytes(4, 'little')
 
-        if self.enable_L:
-            B[0x40:0x44] = valid_chunk_count.to_bytes(4, 'little')
-            B[0x44:0x48] = (0x10 + meta_info_size + total_chunk_size).to_bytes(4, 'little')
-            B[0x48:0x4c] = (0x01234567).to_bytes(4, 'little')
+    if enable_L:
+        B[0x40:0x44] = valid_chunk_count.to_bytes(4, 'little')
+        B[0x44:0x48] = (0x10 + meta_info_size + total_chunk_size).to_bytes(4, 'little')
+        B[0x48:0x4c] = (0x01234567).to_bytes(4, 'little')
 
-        if meta_info:
-            o1 = info_size
-            o2 = o1 + meta_info.nbytes
-            B[o1:o2] = meta_info
+    if meta_info:
+        o1 = info_size
+        o2 = o1 + meta_info.nbytes
+        B[o1:o2] = meta_info
 
-        # This writes the new chunk offset table
-        if chunk_ofs_table_ofs:
-            x = ( chunk_ofs_table_ofs
-                  + chunk_ofs_table_size
-                  + chunk_size_table_size
-                  + optional_chunk_size )
-            for i, c in enumerate(chunks):
-                o = chunk_ofs_table_ofs + 4*i
-                y = c.nbytes + -c.nbytes % 0x10
-                B[o:o+4] = (x * bool(p)).to_bytes(4, 'little')
-                x += p
+    # This writes the new chunk offset table
+    if chunk_ofs_table_ofs:
+        x = ( chunk_ofs_table_ofs
+              + chunk_ofs_table_size
+              + chunk_size_table_size
+              + optional_chunk_size )
+        for i, c in enumerate(chunks):
+            o = chunk_ofs_table_ofs + 4*i
+            y = c.nbytes + -c.nbytes % 0x10
+            B[o:o+4] = (x * bool(p)).to_bytes(4, 'little')
+            x += p
 
-        # This writes the chunk size table
-        if chunk_size_table_ofs:
-            for i, c in enumerate(chunks):
-                o = chunk_size_table_ofs + 4*i
-                B[o:o+4] = c.nbytes.to_bytes(4, 'little')
+    # This writes the chunk size table
+    if chunk_size_table_ofs:
+        for i, c in enumerate(chunks):
+            o = chunk_size_table_ofs + 4*i
+            B[o:o+4] = c.nbytes.to_bytes(4, 'little')
 
-        # This writes the new optional data
-        if optional_chunk:
-            B[o1:o2] = optional_chunk
+    # This writes the new optional data
+    if optional_chunk:
+        B[o1:o2] = optional_chunk
 
+    # This writes the new chunks
+    if chunks:
+        o1 = chunk_ofs_table_ofs
+        o2 = o1 + len(chunks)
+        O = memoryview(B[o1:o2]).cast('I')
+        for i, c in enumerate(chunks):
+            o1 = O[i]
+            o2 = o1 + c.nbytes
+            B[o1:o2] = bytes(c).ljust(c.nbytes + -c.nbytes % 0x10, b'\x00')
 
-        # This writes the new chunks
-        if chunks:
-            o1 = chunk_ofs_table_ofs
-            o2 = o1 + len(chunks)
-            O = memoryview(B[o1:o2]).cast('I')
-            for i, c in enumerate(chunks):
-                o1 = O[i]
-                o2 = o1 + c.nbytes
-                B[o1:o2] = bytes(c).ljust(c.nbytes + -c.nbytes % 0x10, b'\x00')
-
-        return bytes(B)
+    return bytes(B)
 
 @dataclass
 class ContainerParser:
+    _MAGIC: ClassVar[bytes]
     data: memoryview
     ldata: memoryview | None = None
     magic: bytes = field(init=False)
@@ -126,6 +116,8 @@ class ContainerParser:
 
     def __post_init__(self):
         self.magic = bytes(self.data[0:8])
+        if self.magic != self._MAGIC.ljust(8, b'\x00'):
+            raise ValueError(f'data does not have magic bytes "{cls._MAGIC.decode()}".')
         self.version = bytes(self.data[0x8:0xc])
         self.info_size = int.from_bytes(self.data[0xc:0x10], 'little')
         self.container_size = int.from_bytes(self.data[0x10:0x14], 'little')
@@ -197,485 +189,167 @@ class ContainerParser:
         # elif self.ldata:
         #     raise ValueError(f'{magic} should NOT have ldata, but ldata was passed')
 
-# @dataclass
-# class LContainerParser:
-#     data: memoryview
-
-#     @property
-#     def lcontainer_chunk_count(self):
-#         return self._data[0x0:0x4].cast('I')[0]
-
-#     @property
-#     def lcontainer_size(self):
-#         return self._data[0x4:0x8].cast('I')[0]
-
-#     @property
-#     def lcontainer_check_digits(self):
-#         return bytes(self._data[0x8:0xc])
-
-# class TMC(Container):
-#     def __init__(self, data, ldata):
-#         ldata = ldata or self.lheader.ldata
-#         super().__init__(data)
-
-#         tbl = tuple(self._chunk_typeid_table)
-#         L = LHeader(self[tbl.index(0x8000_0020)], ldata)
-
-#         for i, t in enumerate(tbl):
-#             if not (c := self[i]):
-#                 continue
-#             match t:
-#                 case 0x8000_0001:
-#                     try:
-#                         ldata = L.mdlgeo
-#                     except AttributeError:
-#                         ldata = None
-#                     self[i] = MdlGeo(c, ldata)
-#                     self._mdlgeo_cidx = i
-#                 case 0x8000_0002:
-#                     try:
-#                         ldata = L.ttdl
-#                     except AttributeError:
-#                         ldata = None
-#                     self[i] = TTDM(c, ldata)
-#                     self._ttdm_cidx = i
-#                 case 0x8000_0003:
-#                     try:
-#                         ldata = L.vtxlay
-#                     except AttributeError:
-#                         ldata = None
-#                     self[i] = VtxLay(c, ldata)
-#                     self._vtxlay_cidx = i
-#                 case 0x8000_0004:
-#                     try:
-#                         ldata = L.idxlay
-#                     except AttributeError:
-#                         ldata = None
-#                     self[i] = IdxLay(c, ldata)
-#                     self._idxlay_cidx = i
-#                 case 0x8000_0005:
-#                     try:
-#                         ldata = L.mtrcol
-#                     except AttributeError:
-#                         ldata = None
-#                     self[i] = MtrCol(c, ldata)
-#                     self._mtrcol_cidx = i
-#                 case 0x8000_0006:
-#                     try:
-#                         ldata = L.mdlinfo
-#                     except AttributeError:
-#                         ldata = None
-#                     self[i] = MdlInfo(c, ldata)
-#                     self._mdlinfo_cidx = i
-#                 case 0x8000_0010:
-#                     self[i] = HieLay(c)
-#                     self._hielay_cidx = i
-#                 case 0x8000_0020:
-#                     self[i] = L
-#                     self._lheader_cidx = i
-#                 case 0x8000_0030:
-#                     self[i] = NodeLay(c)
-#                     self._nodelay_cidx = i
-#                 case 0x8000_0040:
-#                     self[i] = GlblMtx(c)
-#                     self._glblmtx_cidx = i
-#                 case 0x8000_0050:
-#                     self[i] = BnOfsMtx(c)
-#                     self._bnofsmtx_cidx = i
-#                 case 0x8000_0060:
-#                     self[i] = cpf(c)
-#                     self._cpf_cidx = i
-#                 case 0x8000_0070:
-#                     self[i] = MCAPACK(c)
-#                     self._mcapack_cidx = i
-#                 case 0x8000_0080:
-#                     self[i] = RENPACK(c)
-#                     self._renpack_cidx = i
-
-#     def commit(self):
-#         try:
-#             _ = self.lheader.mdlgeo
-#             self.mdlgeo.commit()
-#             self.lheader.mdlgeo = Chunk(self.mdlgeo.ldata)
-#         except AttributeError:
-#             pass
-#         try:
-#             _ = self.lheader.ttdl
-#             self.ttdm.commit()
-#             self.lheader.ttdl = Chunk(self.ttdm.ttdl.ldata)
-#         except AttributeError:
-#             pass
-#         try:
-#             _ = self.lheader.vtxlay
-#             self.vtxlay.commit()
-#             self.lheader.vtxlay = Chunk(self.vtxlay.ldata)
-#         except AttributeError:
-#             pass
-#         try:
-#             _ = self.lheader.idxlay
-#             self.idxlay.commit()
-#             self.lheader.idxlay = Chunk(self.idxlay.ldata)
-#         except AttributeError:
-#             pass
-#         try:
-#             _ = self.lheader.mtrcol
-#             self.mtrcol.commit()
-#             self.lheader.mtrcol = Chunk(self.mtrcol.ldata)
-#         except AttributeError:
-#             pass
-#         try:
-#             _ = self.lheader.mdlinfo
-#             self.mdlinfo.commit()
-#             self.lheader.mdlinfo = Chunk(self.mdlinfo.ldata)
-#         except AttributeError:
-#             pass
-#         super().commit()
-
-#     @property
-#     def name(self):
-#         return bytes(self._meta_info.mview[0x20:]).partition(b'\x00')[0]
-
-#     @property
-#     def mdlgeo(self):
-#         return self[self._mdlgeo_cidx]
-
-#     @mdlgeo.setter
-#     def mdlgeo(self, val):
-#         self[self._mdlgeo_cidx] = val
-
-#     @property
-#     def ttdm(self):
-#         return self[self._ttdm_cidx]
-
-#     @ttdm.setter
-#     def ttdm(self, val):
-#         self[self._ttdm_cidx] = val
-
-#     @property
-#     def vtxlay(self):
-#         return self[self._vtxlay_cidx]
-
-#     @vtxlay.setter
-#     def vtxlay(self, val):
-#         self[self._vtxlay_cidx] = val
-
-#     @property
-#     def idxlay(self):
-#         return self[self._idxlay_cidx]
-
-#     @idxlay.setter
-#     def idxlay(self, val):
-#         self[self._idxlay_cidx] = val
-
-#     @property
-#     def mtrcol(self):
-#         return self[self._mtrcol_cidx]
-
-#     @mtrcol.setter
-#     def mtrcol(self, val):
-#         self[self._mtrcol_cidx] = val
-
-#     @property
-#     def mdlinfo(self):
-#         return self[self._mdlinfo_cidx]
-
-#     @mdlinfo.setter
-#     def mdlinfo(self, val):
-#         self[self._mdlinfo_cidx] = val
-
-#     @property
-#     def hielay(self):
-#         return self[self._hielay_cidx]
-
-#     @hielay.setter
-#     def hielay(self, val):
-#         self[self._hielay_cidx] = val
-
-#     @property
-#     def lheader(self):
-#         return self[self._lheader_cidx]
-
-#     @lheader.setter
-#     def lheader(self, val):
-#         self[self._lheader_cidx] = val
-
-#     @property
-#     def nodelay(self):
-#         return self[self._nodelay_cidx]
-
-#     @nodelay.setter
-#     def nodelay(self, val):
-#         self[self._nodelay_cidx] = val
-
-#     @property
-#     def glblmtx(self):
-#         return self[self._glblmtx_cidx]
-
-#     @glblmtx.setter
-#     def glblmtx(self, val):
-#         self[self._glblmtx_cidx] = val
-
-#     @property
-#     def bnofsmtx(self):
-#         return self[self._bnofsmtx_cidx]
-
-#     @bnofsmtx.setter
-#     def bnofsmtx(self, val):
-#         self[self._bnofsmtx_cidx] = val
-
-#     @property
-#     def _chunk_typeid_table(self):
-#         c = self.chunk_count
-#         return self._meta_info.mview[0xc0:0xc0+4*c].cast('I')
-
-# class MdlGeo(Container):
-#     def __init__(self, data, ldata = None):
-#         super().__init__(data, ldata)
-#         self.chunks[:] = map(ObjGeo, self.chunks)
-
-#     def commit(self):
-#         super().commit()
-#         for i, objgeo in enumerate(self):
-#             objgeo._id = i
-
-# class ObjGeo(Container):
-#     def __init__(self, data, ldata = None):
-#         super().__init__(data, ldata)
-#         self._optional_chunk = GeoDecl(self._optional_chunk)
-#         self.chunks[:] = map(ObjGeoChunk, self.chunks)
-#         for b in self:
-#             T = ( ObjGeoChunk.Texture(b.mview[o:])
-#                   for o in b._texture_offset_table )
-#             b._textures = list(T)
-#             b._info_size = self.geodecl[b.decl_index].info_size
-
-#     def commit(self):
-#         super().commit()
-#         for i, b in enumerate(self):
-#             b._id = i
-
-#     @property
-#     def geodecl(self):
-#         return self._optional_chunk
-
-#     @property
-#     def name(self):
-#         return bytes(self._meta_info.mview[0x20:]).partition(b'\x00')[0]
-
-#     @property
-#     def _id(self):
-#         return self._meta_info.mview[0x4:0x8].cast('i')[0]
-
-#     @_id.setter
-#     def _id(self, val):
-#         self._meta_info.mview[0x4:0x8].cast('i')[0] = val
-
-# class ObjGeoChunk(Chunk):
-#     @property
-#     def textures(self):
-#         return self._textures
-
-#     @property
-#     def _id(self):
-#         return self.mview[0x0:0x4].cast('i')[0]
-
-#     @_id.setter
-#     def _id(self, val):
-#         self.mview[0x0:0x4].cast('i')[0] = val
-
-#     @property
-#     def mtrcol_index(self):
-#         return self.mview[0x4:0x8].cast('i')[0]
-
-#     @mtrcol_index.setter
-#     def mtrcol_index(self, val):
-#         self.mview[0x4:0x8].cast('i')[0] = val
-
-#     @property
-#     def texture_count(self):
-#         return self.mview[0xc:0x10].cast('I')[0]
-
-#     @property
-#     def _texture_offset_table(self):
-#         # max count = 8
-#         return self.mview[0x10:0x10 + 4*self.texture_count].cast('I')
-
-#     @property
-#     def decl_index(self):
-#         return self.mview[0x38:0x3c].cast('I')[0]
-
-#     @decl_index.setter
-#     def decl_index(self, val):
-#         self.mview[0x38:0x3c].cast('I')[0] = val
-
-#     @property
-#     def soft_transparency(self):
-#         return self.mview[0x40:0x44].cast('I')[0]
-
-#     @soft_transparency.setter
-#     def soft_transparency(self, val):
-#         self.mview[0x40:0x44].cast('I')[0] = val
-
-#     @property
-#     def hard_transparency(self):
-#         return self.mview[0x48:0x4c].cast('I')[0]
-
-#     @hard_transparency.setter
-#     def hard_transparency(self, val):
-#         self.mview[0x48:0x4c].cast('I')[0] = val
-
-#     @property
-#     def index_buffer_offset(self):
-#         return self.mview[0x30+self._info_size+0x10:].cast('I')[0]
-
-#     @index_buffer_offset.setter
-#     def index_buffer_offset(self, val):
-#         self.mview[0x30+self._info_size+0x10:].cast('I')[0] = val
-
-#     @property
-#     def ref_index_count(self):
-#         return self.mview[0x30+self._info_size+0x14:].cast('I')[0]
-
-#     @ref_index_count.setter
-#     def ref_index_count(self, val):
-#         self.mview[0x30+self._info_size+0x14:].cast('I')[0] = val
-
-#     @property
-#     def vertex_buffer_offset(self):
-#         return self.mview[0x30+self._info_size+0x18:].cast('I')[0]
-
-#     @vertex_buffer_offset.setter
-#     def vertex_buffer_offset(self, val):
-#         self.mview[0x30+self._info_size+0x18:].cast('I')[0] = val
-
-#     @property
-#     def ref_vertex_count(self):
-#         return self.mview[0x30+self._info_size+0x1c:].cast('I')[0]
-
-#     @ref_vertex_count.setter
-#     def ref_vertex_count(self, val):
-#         self.mview[0x30+self._info_size+0x1c:].cast('I')[0] = val
-
-#     class Texture:
-#         def __init__(self, data):
-#             self._mview = memoryview(data)
-
-#         @property
-#         def _id(self):
-#             return self._mview[0x0:].cast('i')[0]
-
-#         @_id.setter
-#         def _id(self, val):
-#             self._mview[0x0:].cast('i')[0] = val
-
-#         @property
-#         def category(self):
-#             return self._mview[0x4:].cast('i')[0]
-
-#         @category.setter
-#         def category(self, val):
-#             self._mview[0x4:].cast('i')[0] = val
-
-#         @property
-#         def buffer_index(self):
-#             return self._mview[0x8:].cast('i')[0]
-
-#         @buffer_index.setter
-#         def buffer_index(self, val):
-#             self._mview[0x8:].cast('i')[0] = val
-
-# class GeoDecl(Container):
-#     def __init__(self, data, ldata = None):
-#         super().__init__(data, ldata)
-#         self.chunks[:] = map(GeoDeclChunk, self.chunks)
-
-# class GeoDeclChunk(Chunk):
-#     @property
-#     def info_size(self):
-#         return self.mview[0x4:].cast('I')[0]
-
-#     @property
-#     def index_buffer_index(self):
-#         return self.mview[0xc:].cast('i')[0]
-
-#     @index_buffer_index.setter
-#     def index_buffer_index(self, val):
-#         self.mview[0xc:].cast('i')[0] = val
-
-#     @property
-#     def index_count(self):
-#         return self.mview[0x10:].cast('I')[0]
-
-#     @property
-#     def vertex_count(self):
-#         return self.mview[0x14:].cast('I')[0]
-
-#     @property
-#     def vertex_buffer_index(self):
-#         o = self.info_size
-#         return self.mview[o:].cast('i')[0]
-
-#     @vertex_buffer_index.setter
-#     def vertex_buffer_index(self, val):
-#         o = self.info_size
-#         self.mview[o:].cast('i')[0] = val
-
-#     @property
-#     def vertex_size(self):
-#         o = self.info_size
-#         return self.mview[o+4:].cast('i')[0]
-    
-# class TTDM(Container):
-#     def __init__(self, data, ldata):
-#         ldata = ldata or self.ttdl.ldata
-#         super().__init__(data)
-#         self._meta_info = TTDH(self._meta_info)
-#         self._optional_chunk = TTDL(self._optional_chunk, ldata)
-
-#     @property
-#     def ttdh(self):
-#         return self._meta_info
-
-#     @property
-#     def ttdl(self):
-#         return self._optional_chunk
-
-# class TTDH(Container):
-#     def __init__(self, data, ldata = None):
-#         super().__init__(data, ldata)
-#         self.chunks[:] = map(TTDHChunk, self.chunks)
-
-#     @staticmethod
-#     def makechunk():
-#         return TTDHChunk(bytearray(0x20))
-
-# class TTDHChunk(Chunk):
-#     @property
-#     def is_in_l(self):
-#         return self.mview[0]
-
-#     @is_in_l.setter
-#     def is_in_l(self, val):
-#         self.mview[0] = val
-
-#     @property
-#     def ttdm_ttdl_index(self):
-#         return self.mview[0x4:0x8].cast('i')[0]
-
-#     @ttdm_ttdl_index.setter
-#     def ttdm_ttdl_index(self, val):
-#         self.mview[0x4:0x8].cast('i')[0] = val
-
-# class TTDL(Container):
-#     pass
-
-# class VtxLay(Container):
-#     pass
-
-# class IdxLay(Container):
-#     pass
-
-class MtrCol(Container):
+class TMCParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'TMC'
+    chunk_typeid_table: memoryview = field(init=False)
+    mdlgeo: MdlGeoParser | None = field(init=False)
+    def __post_init__(self, data):
+        super().__post_init__()
+
+        #ldata = ldata or self.lheader.ldata
+        o1 = 0xc0
+        o2 = o1 + 4*self.chunk_count
+        self.chunk_typeid_table = self.meta_info[o1:o2].cast('I')
+        #L = LHeader(self[tbl.index(0x8000_0020)], ldata)
+
+        for t, c in zip(self.chunk_typeid_table, self.chunks):
+            match t:
+                case 0x8000_0001:
+                    self.mdlgeo = (c and MdlGeoParser(c)) or None
+                case 0x8000_0002:
+                    self._ttdm = i
+                case 0x8000_0003:
+                    self._vtxlay = i
+                case 0x8000_0004:
+                    self._idxlay = i
+                case 0x8000_0005:
+                    self._mtrcol = i
+                case 0x8000_0006:
+                    self._mdlinfo = i
+                case 0x8000_0010:
+                    self._hielay = i
+                case 0x8000_0020:
+                    self._lheader = i
+                case 0x8000_0030:
+                    self._nodelay = i
+                case 0x8000_0040:
+                    self._glblmtx = i
+                case 0x8000_0050:
+                    self._bnofsmtx = i
+                case 0x8000_0060:
+                    self._cpf = i
+                case 0x8000_0070:
+                    self._mcapack = i
+                case 0x8000_0080:
+                    self._renpack = i
+        self.name = bytes(self.meta_info[0x20:0x30]).partition(b'\x00')[0]
+
+class MdlGeoParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'MdlGeo'
+    def __post_init__(self, data):
+        super().__post_init__()
+
+class ObjGeoParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'ObjGeo'
+    objgeo_id: int = field(init=False)
+    name: bytes = field(init=False)
+    def __post_init__(self, data):
+        super().__post_init__()
+        self.objgeo_id = int.from_bytes(self.meta_info[0x4:0x8], 'little', signed=True)
+        self.name = bytes(self.meta_info[0x20:0x30]).partition(b'\x00')[0]
+        self.optional_chunk = GeoDeclParser(self.optional_chunk)
+        self.chunks = tuple( ObjGeoChunkParser(c) for c in self.chunks )
+
+class ObjGeoChunkParser:
+    def __post_init__(self):
+        objgeo_id = int.from_bytes(self.data[0x0:0x4], 'little', signed=True)
+        mtrcol_index = int.from_bytes(self.data[0x4:0x8], 'little', signed=True)
+        # texture_count is at most 8
+        texture_count = int.from_bytes(self.data[0xc:0x10], 'little')
+        texture_offset_table = self.data[0x10:0x10 + 4*self.texture_count].cast('I')
+        decl_index = int.from_bytes(self.data[0x38:0x3c], 'little')
+        soft_transparency = int.from_bytes(self.data[0x40:0x44], 'little')
+        hard_transparency = int.from_bytes(self.data[0x48:0x4c], 'little')
+        index_buffer_offset = int.from_bytes(self.data[0x30+self._info_size+0x10:], 'little')
+        ref_index_count = int.from_bytes(self.data[0x30+self._info_size+0x14:], 'little')
+        vertex_buffer_offset = int.from_bytes(self.data[0x30+self._info_size+0x18:], 'little')
+        ref_vertex_count = int.from_bytes(self.data[0x30+self._info_size+0x1c:], 'little')
+        #textures = 
+            #for b in self:
+                #T = ( ObjGeoChunk.Texture(b.mview[o:])
+                    #for o in b._texture_offset_table )
+                #b._textures = list(T)
+                #b._info_size = self.geodecl[b.decl_index].info_size
+
+        class Texture:
+            _id = int.from_bytes(self.data[0x0:0x4], 'little', signed=True)
+            category = int.from_bytes(self.data[0x4:0x8], 'little', signed=True)
+            buffer_index = int.from_bytes(self.data[0x8:0xc], 'little', signed=True)
+
+class GeoDeclParser:
+    _MAGIC: ClassVar[bytes] = b'GeoDecl'
+    def __post_init__(self):
+        self.chunks = tuple( GeoDeclChunkParser(c) for c in self.chunks )
+
+class GeoDeclChunkParser:
+    def __post_init__(self):
+        self.unknown1 = int.from_bytes(self.data[0x0:0x4], 'little')
+        self.geodecl_info_size = int.from_bytes(self.data[0x4:0x8], 'little')
+        self.unknown2 = int.from_bytes(self.data[0x8:0xc], 'little')
+        self.index_buffer_index = int.from_bytes(self.data[0xc:0x10], 'little', signed=True)
+        self.index_count = int.from_bytes(self.data[0x10:0x14], 'little')
+        self.vertex_count = int.from_bytes(self.data[0x14:0x18], 'little')
+        self.unknown3 = int.from_bytes(self.data[0x8:0xc], 'little')
+
+        o = self.geodecl_info_size
+        self.vertex_buffer_index = int.from_bytes(self.self.data[o:o+4], 'little', signed=True)
+        self.vertex_size = int.from_bytes(self.data[o+4:o+8], 'little', signed=True)
+        self.unknown4_count = int.from_bytes(self.data[o+8:o+c], 'little')
+        def f():
+            o = self.geodecl_info_size + 8
+            for i in range(self.unknown_struct_count1):
+                o += -o % 0x10
+                o = o + 8*i
+                v0 = int.from_bytes(self.data[o:o+4], 'little')
+                v1 = int.from_bytes(self.data[o+4:o+8], 'little')
+                yield tuple(v0, v1)
+        self.unknown4 = tuple(f())
+
+def serialize_TTDM():
+    serialize_TTDH()
+    serialize_TTDL()
+
+def seriralize_TTDH():
+    def f():
+        for i, t in enumerate(self.textures):
+            B = bytearray(0x20)
+            B[0x0] = 0
+            B[0x4:0x8] = i.to_bytes(4, 'little', signed=True)
+    chunks = tuple(f())
+    serialize(chunks)
+
+class TTDMParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'TTDM'
+    def __post_init__(self):
+        super().__post_init__()
+        self.meta_info = TTDHParser(self.meta_info)
+        self.optional_chunk = TTDLParser(self.optional_chunk)
+
+class TTDHParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'TTDH'
+    def __post_init__(self):
+        super().__post_init__()
+        def f():
+            for c in self.chunks:
+                is_in_L = bool(self.data[0])
+                # If is_in_L is true, index is for TTDL. Otherwise, it's for TTDM.
+                index = int.from_bytes(self.data[0x4:0x8], 'little', signed=True)
+                yield tuple(is_in_L, index)
+        self.chunks = tuple(f())
+
+class TTDLParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'TTDL'
+
+class VtxLayParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'VtxLay'
+
+class IdxLayParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'IdxLay'
+    def __post_init__(self):
+        super().__post_init__()
+        self.chunks = tuple( c.cast('h') for c in self.chunks )
+
+class MtrCol:
     matrices: list[array]
 
     @classmethod
@@ -698,6 +372,7 @@ class MtrCol(Container):
         return tuple(B)
 
 def MtrColParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'MtrCol'
     def __post_init__(self):
         super().__post_init__()
         self.chunks = tuple( MtrColChunkParser(c) for c in self.chunks )
@@ -722,7 +397,7 @@ class MtrColChunkParser:
         self.xref = tuple(f())
 
 
-class MdlInfo(Container):
+class MdlInfo:
     _chunks: list
 
     def make_chunks(self):
@@ -730,15 +405,18 @@ class MdlInfo(Container):
             objinfo._id = i
         return tuple(self.chunks)
 
+class MdlInfoParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'MdlInfo'
+
 class ObjInfoParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'ObjInfo'
     data: memoryview
     obj_id: int = field(init=False)
 
     def __post_init__(self):
         self.obj_id = int.from_bytes(self.meta_info[0x4:0x8], 'little', signed=True)
 
-class HieLay(Container):
-    _MAGIC = b'HieLay'.ljust(8, b'\x00')
+class HieLay:
     nodes: list[HieLayNode]
 
     def __init__(self):
@@ -778,6 +456,7 @@ class HieLay(Container):
 
 @dataclass
 class HieLayParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'HieLay'
     def __post_init__(self):
         super().__post_init__()
         self.chunks = tuple(HieLayChunkParser(c) for c in self.chunks)
@@ -823,6 +502,7 @@ class HieLayChunkParser:
         self.children = self.data[0x50:0x50+4*n].cast('i')
 
 class LHeaderParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'LHeader'
     chunk_typeid_table: memoryview = field(init=False)
     mdlgeo: memoryview = field(init=False)
     ttdl: memoryview = field(init=False)
@@ -867,7 +547,7 @@ class LHeaderParser(ContainerParser):
                 # case 0xC000_0080:
                 #     self.renpack = self.chunks[i] or None
 
-class NodeLay(Container):
+class NodeLay:
     nodeobjs: list[NodeObj]
 
     def make_chunks(self):
@@ -885,7 +565,10 @@ class NodeLay(Container):
 
         return tuple(f())
 
-class NodeObj(Container):
+class NodeLayParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'NodeLay'
+
+class NodeObj:
     data: NodeObjChunk | None
     # 4x4 float matrix
     matrix: bytes | None = b''
@@ -904,6 +587,7 @@ class NodeObj(Container):
             return (B,)
 
 class NodeObjParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'NodeObj'
     unknown1: int = field(init=False)
     unknown2: int = field(init=False)
     node_id1: int = field(init=False)
@@ -928,7 +612,7 @@ class NodeObjParser(ContainerParser):
             self.matrix = c.data[0x10:0x50].cast('f')
             self.children = c.data[0x50:0x50+4*c.children_count].cast('i')
 
-class GlblMtx(Container):
+class GlblMtx:
     _MAGIC = b'GlblMtx'
     matrices: list[array]
 
@@ -936,15 +620,16 @@ class GlblMtx(Container):
     def from_bytes(cls, data):
         parser = BnOfsMtxParser(memoryview(data).toreadonly())
         instance = cls()
-        instance.matrices = [ array(m) for m in parser.chunks ]
+        instance.matrices = [ array('f', m) for m in parser.chunks ]
         return instance
 
 class GlblMtxParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'NodeObj'
     def __post_init__(self):
         super().__post_init__()
         self.chunks = tuple( c.cast('f') for c in self.chunks )
 
-class BnOfsMtx(Container):
+class BnOfsMtx:
     _MAGIC = b'BnOfsMtx'
     matrices: list[array]
 
@@ -956,6 +641,7 @@ class BnOfsMtx(Container):
         return instance
 
 class BnOfsMtxParser(ContainerParser):
+    _MAGIC: ClassVar[bytes] = b'NodeObj'
     def __post_init__(self):
         super().__post_init__()
         self.chunks = tuple( c.cast('f') for c in self.chunks )
