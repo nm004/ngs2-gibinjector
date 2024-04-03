@@ -48,10 +48,10 @@ def main():
     parser.add_argument('-l', '--with-linked', action='store_true',
                         help='automatically extract linked items too')
     parser.add_argument('-o', '--output-dir', dest='outdir', default='.')
-    parser.add_argument('id', nargs='*', dest='index', type=int)
+    parser.add_argument('index', nargs='*', type=int)
     args = parser.parse_args()
 
-    if not args.extract_all and not len(args.index)
+    if not args.extract_all and not len(args.index):
         parser.print_usage()
         return
 
