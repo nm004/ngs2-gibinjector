@@ -1,10 +1,11 @@
-#!/usr/bin/python3
-# NGS2 Gib Injector by Nozomi Miyamori is marked with CC0 1.0.
-# This file is a part of NGS2 Gib Injector.
+# NINJA GAIDEN Master Collection Scripts by Nozomi Miyamori
+# is marked with CC0 1.0. This file is a part of NINJA GAIDEN
+# Master Collection Scripts.
 #
 # This module is for modding enemy TMC files in NINJA GAIDEN SIGMA 2
 # Master Collection. This injects missing gib mesh objects and gib textures
 # to TMC files.
+
 import mmap
 import os
 import os.path
@@ -12,7 +13,7 @@ import argparse
 from operator import itemgetter
 from databin import Databin
 from collections import Counter
-from tmc import Chunk, TMC, ObjGeo, TTDH, MtrCol, ObjInfo, HieLay, HieLayChunk, NodeObj
+from tmc11 import TMCParser
 
 def main():
     parser = argparse.ArgumentParser()

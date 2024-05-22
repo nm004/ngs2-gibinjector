@@ -1,100 +1,84 @@
-# NGS2 Gib Injector by Nozomi Miyamori is marked with CC0 1.0.
-# This file is a part of NGS2 Gib Injector.
+# NINJA GAIDEN Mater Collection scripts by Nozomi Miyamori
+# is marked with CC0 1.0. This file is a part of NINJA GAIDEN
+# Master Collection Scripts.
 #
 # This module is for parsing databin bundled with NINJA GAIDEN
 # Master Collection.
-from collections.abc import Mapping
+
+from __future__ import annotations
+from typing import NamedTuple
 import zlib
 
-class Databin(Mapping):
+class DatabinParser:
+    chunks: tuple[Chunk]
+
     def __init__(self, data):
-        self._data = data = memoryview(data)
-        chunkbin = self._get_chunkbin(data)
-        self._chunks = { i: Chunk(info, chunkbin) for i, info in self._generate_chunk_info(data) }
+        data = memoryview(data).toreadonly()
 
-    def __getitem__(self, key):
-        return self._chunks[key]
+        # version = int.from_bytes(data[:4], 'little')
+        chunk_info_size = int.from_bytes(data[0x4:0x8], 'little')
+        # unknown_0x8 = int.from_bytes(data[0x8:0xc], 'little')
 
-    def __iter__(self):
-        return iter(self._chunks)
+        head_size = int.from_bytes(data[0x10:0x14], 'little')
+        directory_size = int.from_bytes(data[0x14:0x18], 'little')
+        # unknown_0x18 = int.from_bytes(data[0x18:0x1c], 'little')
+        
+        o1 = head_size
+        o2 = head_size + directory_size
+        directory = data[o1:o2]
 
-    def __len__(self):
-        return len(self._chunks)
+        chunks_count = int.from_bytes(directory[:4], 'little')
 
-    def __contains__(self, val):
-        return key in self._chunks
+        # we don't use these because chunk_id == chunk_index
+        # id_index_map_ofs = int.from_bytes(directory[0x4:0x8], 'little')
+        # id_index_map_count = int.from_bytes(directory[0x8:0xc], 'little')
 
-    def keys(self):
-        return self._chunks.keys()
+        # chunk_id = int.from_bytes(id_index_map[o:o+4], 'little')
+        # chunk_index = int.from_bytes(id_index_map[o+4:o+8], 'little')
 
-    def items(self):
-        return self._chunks.items()
+        o1 = 0x10
+        o2 = 0x10 + 4*chunks_count
+        chunk_info_ofs_table = directory[o1:o2].cast('I')
 
-    def values(self):
-        return self._chunks.values()
+        n = chunk_info_size
+        chunk_info = tuple( directory[o:o+n] for o in chunk_info_ofs_table )
 
-    def get(self, key, default):
-        return self._chunks.get(key, default)
-
-    @staticmethod
-    def _get_head(data):
-        return data[0:0x20].cast('I')
-
-    @staticmethod
-    def _get_directory(data):
-        H = Databin._get_head(data)
-        return data[H[4]:H[4]+H[5]]
+        o = head_size + directory_size
+        self.chunks = tuple(self._gen_chunks(chunk_info, data[o:]) )
 
     @staticmethod
-    def _get_chunkbin(data):
-        H = Databin._get_head(data)
-        return data[H[4]+H[5]:]
+    def _gen_chunks(chunk_info, chunkbin):
+        for i in chunk_info:
+            offset = int.from_bytes(i[:0x8], 'little')
+            decompressed_size = int.from_bytes(i[0x8:0xc], 'little')
+            compressed_size = int.from_bytes(i[0xc:0x10], 'little')
+            linked_chunk_id = int.from_bytes(i[0x14:0x16], 'little')
+            chunk_category1 = i[0x16]
+            chunk_category2 = i[0x17]
 
-    @staticmethod
-    def _generate_chunk_info(data):
-        H = Databin._get_head(data)
-        D = Databin._get_directory(data)
-        chunk_info_ofs_table_item_count = D[0x0:0x4].cast('I')[0]
-        chunk_info_ofs_table = D[0x10:0x10 + 4*chunk_info_ofs_table_item_count].cast('I')
-        chunk_id_index_map_ofs = D[0x4:0x8].cast('I')[0]
-        chunk_id_index_map_item_count = D[0x8:0xc].cast('I')[0]
-        chunk_id_index_map = D[chunk_id_index_map_ofs:]
-        for i in range(chunk_id_index_map_item_count):
-            i = chunk_id_index_map[8*i:8*(i+1)]
-            chunk_id = i.cast('I')[0]
-            chunk_index = i.cast('I')[1]
-            chunk_info_ofs = chunk_info_ofs_table[chunk_index]
-            yield ( chunk_id, D[chunk_info_ofs:chunk_info_ofs+H[1]] )
+            o1 = offset
+            o2 = offset + compressed_size
+            data = chunkbin[o1:o2]
 
-class Chunk:
-    def __init__(self, info, chunkbin):
-        self._info = info
-        o = self._offset
-        self._data = chunkbin[o:o+self.compressed_size]
+            yield Chunk( decompressed_size, compressed_size,
+                         linked_chunk_id, chunk_category1, chunk_category2,
+                         data )
 
-    def decompress(self):
-        return zlib.decompress(self._data)
+    def get_linked_chunks(self, key):
+        c = self.chunks[i]
+        D = {}
+        while (i := c.linked_chunk_id) != -1 and c not in D:
+            D[i] = c
+            c = self.chunks[i]
+        return D
 
-    @property
-    def _offset(self):
-        return self._info.cast('Q')[0]
+class Chunk(NamedTuple):
+    decompressed_size: int
+    compressed_size: int
+    linked_chunk_id: int
+    chunk_category1: int
+    chunk_category2: int
+    data: memoryview
 
-    @property
-    def size(self):
-        return self._info[0x8:0xc].cast('I')[0]
-
-    @property
-    def compressed_size(self):
-        return self._info[0xc:0x10].cast('I')[0]
-
-    @property
-    def linked_chunk_id(self):
-        return self._info[0x14:0x16].cast('h')[0]
-
-    @property
-    def chunk_category_id1(self):
-        return self._info[0x16]
-
-    @property
-    def chunk_category_id2(self):
-        return self._info[0x17]
+def decompress(chunk):
+    return zlib.decompress(chunk.data)

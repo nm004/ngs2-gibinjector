@@ -3,7 +3,7 @@ import mmap
 import sys
 import os.path
 import argparse
-from databin import Databin
+import databin
 from enum import IntEnum
 from collections import ChainMap
 
@@ -61,35 +61,27 @@ def main():
 
     with (open(args.databin, 'rb') as db_f,
         mmap.mmap(db_f.fileno(), 0, access=mmap.ACCESS_READ) as db_m):
-        extract(Databin(db_m), args)
+        extract(databin.DatabinParser(db_m), args)
 
-def extract(databin, args):
+def extract(db, args):
     if args.extract_all:
-        D = enumerate(databin)
+        C = enumerate(db.chunks)
     else:
-        I = set(args.index) & set(databin.keys())
+        I = set(args.index) & set(range(len(db.chunks)))
         for i in sorted(set(args.index) ^ I):
             print(f'data {i} is not in databin. ignored.', file=sys.stderr)
         if not args.extract_all and args.with_linked:
-            D = ChainMap(*( calc_linked_chunks(databin, i) for i in I )).items()
+            C = ( db.get_linked_chunks(i) | {i:db.chunks[i]} for i in I )
+            C = ChainMap(*C).items()
         else:
-            D = ( (i, databin[i]) for i in I )
+            C = ( (i, db.chunks[i]) for i in I )
 
-    f = lambda i: os.path.join(args.outdir, "{:05}.dat".format(i))
-    for i, c in D:
+    f = lambda i: os.path.join(args.outdir, f"{i:05}.dat")
+    for i, c in C:
         if not c.size:
             print(f'data {i} is empty. ignored.', file=sys.stderr)
         else:
-            save(c.decompress(), f(i))
-
-def calc_linked_chunks(databin, start_id):
-    i = start_id
-    D = {}
-    while i != -1 and i not in D:
-        c = databin[i] 
-        D[i] = c
-        i = c.linked_chunk_id
-    return D
+            save(databin.decompress(c), f(i))
 
 def save(data, path):
     with open(path, 'wb') as f:
