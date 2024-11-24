@@ -1,62 +1,13 @@
-import mmap
+from .tcmlib.ngs2 import TMCParser
+
 import os.path
 import sys
-from .tmc11 import TMCParser, MTRLCHNGParser
+import mmap
 from itertools import accumulate
-import argparse
 import struct
 
-def mmap_open(path):
-    with open(path, 'rb') as f: 
-        return mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output-dir', dest='outdir', default='.')
-    parser.add_argument('-e', '--extract-by-index', nargs=1, type=int)
-    parser.add_argument('-E', '--extract-all', action='store_true')
-    parser.add_argument('tmc')
-    parser.add_argument('tmcl')
-    args = parser.parse_args()
-    outdir = args.outdir
-
-    if ((not args.extract_by_index and not args.extract_all)
-        or (args.extract_by_index and args.extract_all)):
-        print('You have to specify one of --extract-by-index or --extract-all.', file=sys.stderr)
-        return
-
-    if not os.path.isdir(outdir):
-        print(f'output directory "{outdir}" not exist.', file=sys.stderr)
-        return
-
-    tmc_m, tmcl_m = mmap_open(args.tmc), mmap_open(args.tmcl)
-    with tmc_m, tmcl_m:
-        try:
-            tmc = TMCParser(tmc_m, tmcl_m)
-        except:
-            print('parser error')
-        with tmc:
-            textures = tuple(generate_textures(tmc.ttdm))
-            n = len(str(len(textures)))
-            j = lambda i: os.path.join(args.outdir, tmc.metadata.name.decode() + '_' + str(i+1001).zfill(n)+'.dds')
-            if args.extract_all:
-                for i, t in enumerate(textures):
-                    save(j(i), t)
-            else:
-                save(j(i), textures[args.e])
-
-def generate_textures(ttdm):
-    for h in ttdm.metadata.chunks:
-        if h.in_ttdl:
-            yield ttdm.sub_container.chunks[h.chunk_index]
-        else:
-            yield ttdm.chunks[h.index]
-
-def save(path, data):
-    with open(path, 'wb') as f:
-        f.write(data)
-
-def main2():
+    return
     n = 1098
     srctmc_m, srctmcl_m = mmap_aiueo(n), mmap_aiueo(n+1)
     srctmc = TMCParser(srctmc_m, srctmcl_m)
@@ -227,35 +178,18 @@ def main2():
 
         new_tmc = serialize_container(b'TMC', dsttmc_chunks, dsttmc._metadata)
 
-def main3():
-    n = 1065
-    dsttmc_m = mmap_aiueo(n)
-    dsttmc = TMCParser(dsttmc_m)
-    with dsttmc_m, dsttmc:
-        dsttmc_chunks = list(dsttmc._chunks)
-
-        mtrlchng = MTRLCHNGParser(dsttmc_chunks[0xd + 5])
-        mtrlchng_chunks = list(mtrlchng._chunks)
-        mtrlchng_chunks[2] = c = bytearray(mtrlchng._chunks[2])
-        a = int(sys.argv[1])
-        n = len(dsttmc.mtrcol.chunks)*0xd0
-        c[:n] = c[a*n:(a+1)*n]
-        dsttmc_chunks[0xd + 5] = serialize_container(b'MTRLCHNG', mtrlchng_chunks, mtrlchng._metadata)
-        new_tmc = serialize_container(b'TMC', dsttmc_chunks, dsttmc._metadata)
-
-        mtrlchng.close()
-
-    with open(r"C:\Program Files (x86)\Steam\steamapps\common\[NINJA GAIDEN Master Collection] NINJA GAIDEN Σ2\mods\00823.dat", 'wb') as f:
-        f.write(new_tmc)
-
-def mmap_aiueo(n):
-    with open(os.path.join(r'R:\tmp\aiueo2', str(n).zfill(5) + '.dat'), 'rb') as f:
-        return mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-
 def offset_table_of(x):
     n, = struct.unpack_from('< I', x, 0x14)
     o, = struct.unpack_from('< I', x, 0x20)
     return struct.unpack_from(f' {n}I', x, o)
+
+def mmap_open(path):
+    with open(path, 'rb') as f: 
+        return mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+
+def save(path, data):
+    with open(path, 'wb') as f:
+        f.write(data)
 
 def serialize_container(magic, chunks = (), metadata = b'', sub_container = b'', *, separating_body = False, aligned = 0x10):
     chunks = tuple( memoryview(c) for c in chunks )
@@ -327,6 +261,4 @@ def serialize_container(magic, chunks = (), metadata = b'', sub_container = b'',
     return separating_body and (data, ldata) or data
 
 if __name__ == '__main__':
-    #main3()
-    #main2()
     main()
