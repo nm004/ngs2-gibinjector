@@ -36,12 +36,6 @@ def fix_bloodstain(db):
     workpack = list(cmn_blood[0][0].packs)
     # workpack[11] = (list(workpack[93]), workpack[13][1])
 
-    tmc2 = list(tmc._chunks)
-    tmc2[11] = serialize_epm1(epm1)
-
-    b = serialize_tmc(b'TMC', tmc2, meta_data = tmc._meta_data)
-
-    return b
     # w = workpack[13][0]
 
     # # Color mode (RGB = 0, ? = 1, CMYK = 2)
@@ -58,13 +52,56 @@ def fix_bloodstain(db):
 
     # # 
     # w[0][]
-    
 
-    # epm1[41] = sealize_workpack(workpack)
+    tmc2 = list(tmc._chunks)
+    blobs = [ b''.join(j._data for j in i.packs) for i in epm1 ]
+    # blobs[41] = sealize_workpack(workpack)
+    tmc2[11] = serialize_epm1(tmc.epm1._data[0x20:0x20+0x690], blobs)
+    return serialize_tmc(b'TMC', tmc2, meta_data = tmc._meta_data)
 
+def serialize_sdp1(category, param_info, blobs):
+    param_table_size = len(param_info)
+    pack_table_size = 4 * 2 * len(blobs)
+    blob_table_size = sum( len(b) for b in blobs )
+    B = bytearray(0x30 + param_table_size + pack_table_size + blob_table_size)
 
-def serialize_epm1(param_info, packs):
-    B = serialize_sdp1(SDP1Enum.EPM1, param_info, packs, ())
+    match category:
+        case SDP1Enum.EPM1:
+            magic = b'EPM1'
+        case SDP1Enum.WorkPack:
+            magic = b'WorkPack'
+
+    B[0x0:0x8] = magic.ljust(0x8, b'\x00')
+    B[0x8:0xc] = b'1PDS'
+    B[0xc:0x10] = len(B).to_bytes(4, 'little')
+    B[0x10:0x14] = len(param_info).to_bytes(4, 'little')
+    B[0x14:0x18] = int(category).to_bytes(4, 'little')
+    B[0x18:0x1c] = 0x0.to_bytes(4, 'little')
+    B[0x1c:0x20] = (pack_table_size // 4).to_bytes(4, 'little')
+    x = 0x30
+    param_info_table_ofs = x
+    B[0x20:0x24] = param_info_table_ofs.to_bytes(4, 'little')
+    x += param_table_size
+    pack_table_ofs = bool(pack_table_size) * x
+    B[0x24:0x28] = pack_table_ofs.to_bytes(4, 'little')
+    x += pack_table_size
+    blob_table_ofs = bool(blob_table_size) * x
+    B[0x2c:0x30] = blob_table_ofs.to_bytes(4, 'little')
+
+    B[0x30:0x30+len(param_info)] = param_info
+
+    O = range(pack_table_ofs, pack_table_ofs + pack_table_size, 0x8)
+    o2 = blob_table_ofs
+    for o, b in zip(O, blobs):
+        B[o:o+4] = o2.to_bytes(4, 'little')
+        B[o+4:o+8] = len(b).to_bytes(4, 'little')
+        B[o2:o2+len(b)] = b
+        o2 += len(b)
+
+    return B
+
+def serialize_epm1(param_info, blobs):
+    B = serialize_sdp1(SDP1Enum.EPM1, param_info, blobs)
     return B
 
 def serialize_workpack(workpack):
@@ -82,59 +119,6 @@ def serialize_workpack(workpack):
     #             o += len(p)
 
     return bytes(B)
-
-def serialize_sdp1(category, param_info, packs, blobs):
-    param_table_size = 0x10 * len(param_info) + sum( len(p.id) for p in param_info )
-    pack_table_size = 4 * 2 * len(packs)
-    B = bytearray(0x30 + param_table_size + pack_table_size)
-
-    match category:
-        case SDP1Enum.EPM1:
-            magic = b'EPM1'
-        case SDP1Enum.WorkPack:
-            magic = b'WorkPack'
-
-    B[0x0:0x8] = magic.ljust(0x8, b'\x00')
-    B[0x8:0xc] = b'1PDS'
-    B[0xc:0x10] = len(B).to_bytes(4, 'little')
-    B[0x10:0x14] = len(param_info).to_bytes(4, 'little')
-    B[0x14:0x18] = int(category).to_bytes(4, 'little')
-    B[0x18:0x1c] = len(packs).to_bytes(4, 'little')
-    B[0x1c:0x20] = pack_table_size.to_bytes(4, 'little')
-    x = 0x30
-    param_info_table_ofs = x
-    B[0x20:0x24] = param_info_table_ofs.to_bytes(4, 'little')
-    x += pack_table_size // 4
-    pack_table_ofs = bool(pack_table_size) * x
-    B[0x24:0x28] = pack_table_ofs.to_bytes(4, 'little')
-    blob_table_ofs = bool(blob_table_size) * x
-    B[0x2c:0x30] = blob_table_ofs.to_bytes(4, 'little')
-
-    o1 = 0x30
-    o2 = 0x30 + 0x10 * len(param_info)
-    o3 = o2 // 4
-    for i, o, p in zip(range(0, 2*len(param_info), 2), range(o1, o2, 0x10), param_info):
-        B[o:o+0x3] = p.array_size.to_bytes(3, 'little')
-        B[o+0x3] = p.value_type
-        B[o+0x4:o+0x8] = i.to_bytes(4, 'little')
-        B[o+0x8:o+0xc] = o3.to_bytes(4, 'little')
-        o3 += len(p.param_id) // 4
-        B[o+0xc:o+0x10] = ((p.is_first_node << 31) | p.next_node).to_bytes(4, 'little')
-
-        o1 = 4*p.param_id_ofs
-        o2 = o1 + len(p.param_id)
-        B[o1:o2] = p.param_id
-
-    match category:
-        case SDP1Enum.EPM1 | SDP1Enum.WorkPack:
-            o2 = blob_table_ofs
-            for o, p in packs:
-                B[o:o+4] = o2
-                B[o+4:o+8] = len(p)
-                B[o2:o2+len(p)] = p
-                o2 += len(p)
-
-    return B
 
 class SDP1Enum(enum.IntEnum):
     EPM1 = 0

@@ -1,4 +1,4 @@
-# TCMLib by Nozomi Miyamori is marked with CC0 1.0.
+# TMCLib by Nozomi Miyamori is marked with CC0 1.0.
 # This file is a part of TCMLib.
 
 from abc import ABC, abstractmethod

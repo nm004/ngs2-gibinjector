@@ -148,7 +148,7 @@ class BankPackParser(PackParser):
         super().__init__(b'BankPack', data)
 
 class TexIndexParser:
-    data: memoryview
+    _data: memoryview
     
     def __init__(self, data):
         if (x1 := bytes(data[0x0:0x8])) != b'TexIndex':
@@ -157,7 +157,7 @@ class TexIndexParser:
         if (x1 := bytes(data[0x8:0xc])) != b'1DIN':
             raise ValueError(f'not supported TexIndex version "{x1.decode()}"')
         container_size = int.from_bytes(data[0xc:0x10], 'little')
-        data = data[:container_size].toreadonly()
+        self._data = data[:container_size].toreadonly()
 
         # unknown_count1 = int.from_bytes(data[0x10:0x14], 'little')
         # unknown2 = int.from_bytes(data[0x14:0x18], 'little')
