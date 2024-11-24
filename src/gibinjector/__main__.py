@@ -1,3 +1,10 @@
+# NINJA GAIDEN Mater Collection scripts by Nozomi Miyamori
+# is marked with CC0 1.0. This file is a part of NINJA GAIDEN
+# Master Collection Scripts.
+#
+# This module is for parsing databin bundled with NINJA GAIDEN
+# Master Collection.
+
 from .tcmlib.ngs2 import TMCParser
 
 import os.path
@@ -8,6 +15,8 @@ import struct
 
 def main():
     return
+
+def a():
     n = 1098
     srctmc_m, srctmcl_m = mmap_aiueo(n), mmap_aiueo(n+1)
     srctmc = TMCParser(srctmc_m, srctmcl_m)
