@@ -387,7 +387,7 @@ class MtrColParser(ContainerParser):
 
 class MtrColChunk(NamedTuple):
     mix: tuple[float]
-    overlay: tuple[float]
+    diffuse: tuple[float]
     specular: tuple[float]
     # unknown0x30: tuple[float]
     # unknown0x40: tuple[float]
@@ -573,7 +573,7 @@ class MTRLCHNGMetaData(NamedTuple):
 # Same as MtrColChunk but w/o mtrcol_index and xrefs
 class MTRLCHNGElement(NamedTuple):
     mix: tuple[float]
-    overlay: tuple[float]
+    diffuse: tuple[float]
     specular: tuple[float]
     # unknown0x30: tuple[float]
     # unknown0x40: tuple[float]
