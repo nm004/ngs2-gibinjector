@@ -1,9 +1,4 @@
-# NINJA GAIDEN Mater Collection scripts by Nozomi Miyamori
-# is marked with CC0 1.0. This file is a part of NINJA GAIDEN
-# Master Collection Scripts.
-#
-# This module is for parsing databin bundled with NINJA GAIDEN
-# Master Collection.
+# This program is by Nozomi Miyamori, under the public domain and marked with CC0 1.0.
 
 from .tcmlib.ngs2 import TMCParser, NodeLayParser
 from .databin import DatabinParser, decompress
@@ -376,8 +371,8 @@ def inject_gibs(srctmc, dsttmc, *, src_gib_first_index, src_gib_tex, src_gib_nor
     lheader, lheader_ldata = serialize_container(b'LHeader', lheader_chunks, dsttmc.lheader._metadata, separating_body = True, aligned = 0x80)
     dsttmc_chunks[dsttmc_chunks.index(dsttmc.lheader._data)] = lheader
 
-    # This chunk consists of 8 chunks of data. Each of them contains two "short".
-    # First index of the type of Node (MOT, OPT, SUP, etc.), and number of nodes of the type.
+    # This chunk consists of 8 chunks of data. Each of them contains two "short":
+    # the first index of the type of Node (MOT, OPT, SUP, etc.), and number of nodes of the type.
     dsttmc_chunks[13] = c = bytearray(dsttmc._chunks[13])
     # 0x0 NML?
     # 0x4 MOT
